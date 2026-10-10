@@ -1,0 +1,2 @@
+[console_scripts]
+trinetra-discover-s1 = trinetra.discovery.cli:main

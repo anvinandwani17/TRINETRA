@@ -53,3 +53,25 @@ data/cache/
 Thumbs.db
 .vscode/
 .idea/
+# Local satellite outputs and model weights
+data/processed/
+data/raw/
+artifacts/
+*.pt
+*.pth
+*.ckpt
+.env.*
+!.env.example
+
+# Integration: private configuration and generated results
+.env
+.env.*
+!.env.example
+*.pt
+*.pth
+*.ckpt
+data/processed/
+data/raw/
+data/cache/
+data/runs/integrated/
+artifacts/

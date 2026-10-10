@@ -1,0 +1,7 @@
+-r requirements.txt
+-e .[dev,geo,discovery,download,s3,preprocess]
+requests>=2.32,<3
+networkx>=3.4,<4
+scipy>=1.14,<2
+python-dotenv>=1,<2
+pyarrow>=19,<25

@@ -1,874 +1,173 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import maplibregl, { GeoJSONSource, Popup } from "maplibre-gl";
-import MapboxDraw from "@mapbox/mapbox-gl-draw";
+import { useEffect, useRef, useState } from 'react';
+import maplibregl, { GeoJSONSource } from 'maplibre-gl';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+import './integration.css';
 
-import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
+const API = 'http://127.0.0.1:8000';
+type AOI = { type: 'Polygon'; coordinates: number[][][] };
+type Layer = { type: 'FeatureCollection'; features: any[] };
+type Job = { id: string; state: string; message: string; summary: Record<string, any>; warnings: string[]; provenance: Record<string, any> };
+const definitions = [
+  { key: 'unobservable', label: 'Unknown / unsupported terrain', color: '#94a3b8', kind: 'fill' },
+  { key: 'flood_extent', label: 'Candidate flood evidence', color: '#38bdf8', kind: 'fill' },
+  { key: 'affected_buildings', label: 'Potentially affected buildings', color: '#fbbf24', kind: 'fill' },
+  { key: 'unknown_buildings', label: 'Buildings in unknown terrain', color: '#d1d5db', kind: 'fill' },
+  { key: 'unknown_roads', label: 'Roads with unknown exposure', color: '#cbd5e1', kind: 'line' },
+  { key: 'damaged_roads', label: 'Potentially affected roads', color: '#f97316', kind: 'line' },
+  { key: 'affected_bridges', label: 'Potentially affected mapped bridges', color: '#e879f9', kind: 'line' },
+  { key: 'settlements', label: 'Mapped settlements / conditional access', color: '#facc15', kind: 'circle' },
+] as const;
 
-const API = "http://127.0.0.1:8000";
-
-type AOI = {
-  type: "Polygon";
-  coordinates: number[][][];
-};
-
-type Job = {
-  id?: string;
-  job_id?: string;
-  state: string;
-  flood_date: string;
-  message: string;
-};
-
-type SummaryData = {
-  total_settlements?: number;
-  settlements_cut_off?: number;
-  damaged_road_segments?: number;
-  total_buildings?: number;
-  hospitals_monitored?: number;
-  foot_cut_off?: number;
-  pedestrian_accessible_only?: number;
-  viable_landing_zones?: number;
-  s2_optical_available?: boolean;
-  s2_optical_date?: string;
-  s2_cloud_cover?: string;
-};
-
-type ProvenanceData = {
-  osm_snapshot?: string;
-  cache_hit?: boolean;
-  note?: string;
-};
+async function request(path: string, options?: RequestInit) {
+  const response = await fetch(API + path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+  return data;
+}
 
 export default function App() {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const drawRef = useRef<MapboxDraw | null>(null);
-  const pollTimerRef = useRef<number | null>(null);
-  const popupRef = useRef<Popup | null>(null);
-
-  const [date, setDate] = useState("2026-08-26");
+  const container = useRef<HTMLDivElement>(null);
+  const map = useRef<maplibregl.Map | null>(null);
+  const draw = useRef<MapboxDraw | null>(null);
+  const poll = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingVersion = useRef(0);
+  const [ready, setReady] = useState(false);
   const [aoi, setAoi] = useState<AOI | null>(null);
-  const [status, setStatus] = useState("READY");
-  const [message, setMessage] = useState("Draw an analysis area on the map.");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [date, setDate] = useState('2026-08-26');
+  const [method, setMethod] = useState('baseline');
+  const [status, setStatus] = useState('READY');
+  const [message, setMessage] = useState('Load the processed Trishuli area to begin.');
+  const [job, setJob] = useState<Job | null>(null);
+  const [layers, setLayers] = useState<Record<string, Layer>>({});
+  const [visible, setVisible] = useState<Record<string, boolean>>(Object.fromEntries(definitions.map(x => [x.key, true])));
 
-  // Summary & Provenance state
-  const [summary, setSummary] = useState<SummaryData | null>(null);
-  const [provenance, setProvenance] = useState<ProvenanceData | null>(null);
-
-  // Layer Visibility States
-  const [hazardVisible, setHazardVisible] = useState(true);
-  const [roadsVisible, setRoadsVisible] = useState(true);
-  const [settlementsVisible, setSettlementsVisible] = useState(true);
-  const [unobservableVisible, setUnobservableVisible] = useState(true);
-  const [hasResults, setHasResults] = useState(false);
-
-  // Keep a ref to jobId so map click listeners always have the latest value
-  const jobIdRef = useRef<string | null>(null);
   useEffect(() => {
-    jobIdRef.current = jobId;
-  }, [jobId]);
-
-  // ---------------------------------------------------------
-  // INITIALIZE MAP
-  // ---------------------------------------------------------
-  useEffect(() => {
-    if (!mapContainer.current) return;
-
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            attribution: "© OpenStreetMap contributors",
-          },
-        },
-        layers: [
-          {
-            id: "osm",
-            type: "raster",
-            source: "osm",
-          },
-        ],
-      },
-      center: [85.325, 27.7],
-      zoom: 12,
-    });
-
-    mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
-
-    const draw = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: {
-        polygon: false,
-        trash: false,
-      },
-      defaultMode: "simple_select",
-    });
-
-    drawRef.current = draw;
-    map.addControl(draw as unknown as maplibregl.IControl, "top-left");
-
-    map.on("draw.create", (event: { features?: any[] }) => {
+    if (!container.current) return;
+    const instance = new maplibregl.Map({ container: container.current,
+      style: { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256,
+        attribution: '© OpenStreetMap contributors' } }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }] },
+      center: [85.15, 27.95], zoom: 11 });
+    map.current = instance;
+    instance.addControl(new maplibregl.NavigationControl(), 'top-right');
+    const control = new MapboxDraw({ displayControlsDefault: false, controls: { polygon: true, trash: true } });
+    draw.current = control;
+    instance.addControl(control as unknown as maplibregl.IControl, 'top-left');
+    const capture = (event: any) => {
       const feature = event.features?.[0];
-      if (!feature || feature.geometry.type !== "Polygon") {
-        setStatus("ERROR");
-        setMessage("Please draw a valid closed polygon.");
-        return;
+      if (feature?.geometry.type === 'Polygon') {
+        setAoi(feature.geometry); setMessage('Area selected. Only polygons inside the processed Trishuli area are supported.');
       }
-
-      setAoi({
-        type: "Polygon",
-        coordinates: feature.geometry.coordinates,
-      });
-
-      setTimeout(() => {
-        try {
-          draw.changeMode("simple_select", { featureIds: [] });
-        } catch {
-          // Fallback if mode switch fails
-        }
-      }, 50);
-
-      setStatus("AOI READY");
-      setMessage("AOI captured successfully. You can now run the analysis.");
-    });
-
-    map.on("draw.update", (event: { features?: any[] }) => {
-      const feature = event.features?.[0];
-      if (!feature || feature.geometry.type !== "Polygon") return;
-
-      setAoi({
-        type: "Polygon",
-        coordinates: feature.geometry.coordinates,
-      });
-      setStatus("AOI UPDATED");
-      setMessage("Analysis area updated.");
-    });
-
-    map.on("draw.delete", () => {
-      setAoi(null);
-      setStatus("READY");
-      setMessage("Draw an analysis area on the map.");
-    });
-
-    // Settlement click interaction
-    map.on("click", "settlements-layer", (e) => {
-      if (!e.features || !e.features[0]) return;
-      const feat = e.features[0];
-      const props = feat.properties || {};
-      const coords = (feat.geometry as any).coordinates.slice();
-
-      const isCutOff = props.road_status === "cut_off" || props.status === "cut_off";
-      const badgeColor = isCutOff ? "#ef4444" : "#10b981";
-      const statusText = isCutOff ? "ROAD CUT OFF" : props.status === "accessible" ? "ACCESSIBLE" : "BASELINE DISCONNECTED";
-      const footStat = props.foot_status === "accessible" ? "OPEN 🟢" : "BLOCKED 🔴";
-      const pMC = props.cutoff_probability !== undefined ? `${Math.round(props.cutoff_probability * 100)}%` : "N/A";
-      const lzInfo = props.landing_zone ? (typeof props.landing_zone === "string" ? JSON.parse(props.landing_zone) : props.landing_zone) : null;
-
-      const html = `
-        <div style="font-family: inherit; color: #0b1020; min-width: 210px;">
-          <h4 style="margin: 0 0 6px; font-size: 14px; font-weight: 700;">${props.name || "Settlement"}</h4>
-          <div style="margin-bottom: 6px;">
-            <span style="background:${badgeColor}; color:#fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">
-              ${statusText}
-            </span>
-          </div>
-          <div style="font-size: 11px; color: #475569; line-height: 1.5;">
-            <div><strong>Foot Trail:</strong> ${footStat}</div>
-            <div><strong>Monte Carlo Cutoff:</strong> ${pMC}</div>
-            <div><strong>Critical Bottleneck:</strong> ${props.critical_bottleneck || "None"}</div>
-            ${lzInfo ? `<div><strong>Nearest LZ:</strong> ${lzInfo.nearest_lz_name} (${lzInfo.distance_km} km)</div>` : ""}
-            <div><strong>Baseline Access:</strong> ${props.baseline_connected ? "Yes" : "No"}</div>
-            <div><strong>Type:</strong> ${props.place || "settlement"}</div>
-          </div>
-        </div>
-      `;
-
-      if (popupRef.current) popupRef.current.remove();
-      popupRef.current = new maplibregl.Popup({ offset: 12 })
-        .setLngLat(coords)
-        .setHTML(html)
-        .addTo(map);
-    });
-
-    map.on("mouseenter", "settlements-layer", () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", "settlements-layer", () => {
-      map.getCanvas().style.cursor = "";
-    });
-
-    // Damaged Road click interaction ("Restore this edge" counterfactual)[cite: 3]
-    map.on("click", "damaged-roads-layer", async (e) => {
-      const currentJob = jobIdRef.current;
-      if (!e.features || !e.features[0] || !currentJob) return;
-      const feat = e.features[0];
-      const props = feat.properties || {};
-      const edgeId = props.edge_id;
-      const coords = e.lngLat;
-
-      if (!edgeId) return;
-
-      const loadingHtml = `
-        <div style="font-family: inherit; color: #0b1020; min-width: 180px;">
-          <h4 style="margin: 0 0 4px; font-size: 13px;">Simulating Edge Repair...</h4>
-          <span style="font-size: 11px; color: #64748b;">Evaluating topological reconnection...</span>
-        </div>
-      `;
-
-      if (popupRef.current) popupRef.current.remove();
-      popupRef.current = new maplibregl.Popup({ offset: 10 })
-        .setLngLat(coords)
-        .setHTML(loadingHtml)
-        .addTo(map);
-
-      try {
-        const res = await fetch(`${API}/api/v1/jobs/${currentJob}/simulate-restoration`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ edge_id: edgeId }),
-        });
-
-        if (!res.ok) throw new Error("Simulation failed");
-        const simData = await res.json();
-
-        const count = simData.count_reconnected ?? 0;
-        const resultColor = count > 0 ? "#10b981" : "#64748b";
-
-        const simHtml = `
-          <div style="font-family: inherit; color: #0b1020; min-width: 200px;">
-            <h4 style="margin: 0 0 6px; font-size: 14px; font-weight: 700;">${props.name || "Road Segment"}</h4>
-            <div style="font-size: 11px; color: #475569; margin-bottom: 6px;">
-              <div><strong>Highway:</strong> ${props.highway || "road"}</div>
-              <div><strong>Bridge:</strong> ${props.bridge ? "Yes" : "No"}</div>
-            </div>
-            <div style="border-top: 1px solid #e2e8f0; padding-top: 6px;">
-              <span style="font-size: 11px; font-weight: 600;">Counterfactual Impact:</span>
-              <div style="font-size: 13px; font-weight: 700; color: ${resultColor}; margin-top: 2px;">
-                ${count > 0 ? `+${count} Settlements Reconnected` : "0 Reconnected (Upstream severed)"}
-              </div>
-            </div>
-          </div>
-        `;
-
-        popupRef.current?.setHTML(simHtml);
-      } catch (err) {
-        popupRef.current?.setHTML(`
-          <div style="color: #ef4444; font-size: 11px;">Simulation failed for this edge.</div>
-        `);
-      }
-    });
-
-    map.on("mouseenter", "damaged-roads-layer", () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", "damaged-roads-layer", () => {
-      map.getCanvas().style.cursor = "";
-    });
-
-    return () => {
-      if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
-      if (popupRef.current) popupRef.current.remove();
-      map.remove();
-      mapRef.current = null;
     };
-  }, []);
-
-  // ---------------------------------------------------------
-  // LAYER MANAGEMENT
-  // ---------------------------------------------------------
-  const removeAllLayers = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (popupRef.current) popupRef.current.remove();
-
-    [
-      "hazard-outline", "hazard-fill", 
-      "unobservable-outline", "unobservable-fill", 
-      "damaged-roads-layer", "settlements-layer"
-    ].forEach((layerId) => {
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-    });
-
-    ["hazard", "unobservable", "damaged_roads", "settlements"].forEach((sourceId) => {
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-    });
-
-    setHasResults(false);
-    setSummary(null);
-    setProvenance(null);
-  }, []);
-
-  const loadLayersAndMetadata = useCallback(async (id: string) => {
-    try {
-      const map = mapRef.current;
-      if (!map) return;
-
-      const layersRes = await fetch(`${API}/api/v1/jobs/${id}/layers`);
-      if (layersRes.ok) {
-        const rawLayers = await layersRes.json();
-
-        const floodData = Array.isArray(rawLayers)
-          ? rawLayers.find((l: any) => l.name === "flood_extent")?.data
-          : rawLayers.flood_extent;
-
-        const unobsData = Array.isArray(rawLayers)
-          ? rawLayers.find((l: any) => l.name === "unobservable")?.data
-          : rawLayers.unobservable;
-
-        const roadsData = Array.isArray(rawLayers)
-          ? rawLayers.find((l: any) => l.name === "damaged_roads")?.data
-          : rawLayers.damaged_roads;
-
-        const settlementsData = Array.isArray(rawLayers)
-          ? rawLayers.find((l: any) => l.name === "settlements")?.data
-          : rawLayers.settlements;
-
-        // Flood Extent Layer
-        if (floodData) {
-          if (map.getSource("hazard")) {
-            (map.getSource("hazard") as GeoJSONSource).setData(floodData);
-          } else {
-            map.addSource("hazard", { type: "geojson", data: floodData });
-            map.addLayer({
-              id: "hazard-fill",
-              type: "fill",
-              source: "hazard",
-              paint: { "fill-color": "#ef4444", "fill-opacity": 0.45 },
-            });
-            map.addLayer({
-              id: "hazard-outline",
-              type: "line",
-              source: "hazard",
-              paint: { "line-color": "#dc2626", "line-width": 2 },
-            });
-          }
-        }
-
-        // Unobservable Radar Shadow Layer[cite: 3]
-        if (unobsData) {
-          if (map.getSource("unobservable")) {
-            (map.getSource("unobservable") as GeoJSONSource).setData(unobsData);
-          } else {
-            map.addSource("unobservable", { type: "geojson", data: unobsData });
-            map.addLayer({
-              id: "unobservable-fill",
-              type: "fill",
-              source: "unobservable",
-              paint: { "fill-color": "#64748b", "fill-opacity": 0.4 },
-            });
-            map.addLayer({
-              id: "unobservable-outline",
-              type: "line",
-              source: "unobservable",
-              paint: { "line-color": "#475569", "line-width": 1.5, "line-dasharray": [2, 2] },
-            });
-          }
-        }
-
-        // Damaged Roads Layer
-        if (roadsData) {
-          if (map.getSource("damaged_roads")) {
-            (map.getSource("damaged_roads") as GeoJSONSource).setData(roadsData);
-          } else {
-            map.addSource("damaged_roads", { type: "geojson", data: roadsData });
-            map.addLayer({
-              id: "damaged-roads-layer",
-              type: "line",
-              source: "damaged_roads",
-              paint: { "line-color": "#f97316", "line-width": 3.5 },
-            });
-          }
-        }
-
-        // Settlements Layer
-        if (settlementsData) {
-          if (map.getSource("settlements")) {
-            (map.getSource("settlements") as GeoJSONSource).setData(settlementsData);
-          } else {
-            map.addSource("settlements", { type: "geojson", data: settlementsData });
-            map.addLayer({
-              id: "settlements-layer",
-              type: "circle",
-              source: "settlements",
-              paint: {
-                "circle-radius": 7,
-                "circle-color": [
-                  "match",
-                  ["get", "status"],
-                  "cut_off",
-                  "#ef4444",
-                  "accessible",
-                  "#10b981",
-                  "#64748b",
-                ],
-                "circle-stroke-width": 2,
-                "circle-stroke-color": "#ffffff",
-              },
-            });
-          }
-        }
-      }
-
-      const [sumRes, provRes] = await Promise.all([
-        fetch(`${API}/api/v1/jobs/${id}/summary`),
-        fetch(`${API}/api/v1/jobs/${id}/provenance`),
-      ]);
-
-      if (sumRes.ok) {
-        const sumData = await sumRes.json();
-        setSummary(sumData.summary || sumData);
-      }
-      if (provRes.ok) {
-        const provData = await provRes.json();
-        setProvenance(provData);
-      }
-
-      setHasResults(true);
-      setHazardVisible(true);
-      setRoadsVisible(true);
-      setSettlementsVisible(true);
-      setUnobservableVisible(true);
-    } catch (error) {
-      console.error("Failed to load layers or summary:", error);
-    }
-  }, []);
-
-  // ---------------------------------------------------------
-  // POLLING
-  // ---------------------------------------------------------
-  const monitorJob = useCallback(
-    (id: string) => {
-      if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
-
-      const poll = async () => {
-        try {
-          const response = await fetch(`${API}/api/v1/jobs/${id}`);
-          if (!response.ok) throw new Error("Unable to read job status.");
-
-          const job: Job = await response.json();
-          setStatus(job.state);
-          setMessage(job.message);
-
-          if (job.state === "COMPLETE") {
-            await loadLayersAndMetadata(id);
-            return;
-          }
-
-          if (job.state === "FAILED") return;
-
-          pollTimerRef.current = window.setTimeout(poll, 700);
-        } catch (error) {
-          console.error(error);
-          setStatus("FAILED");
-          setMessage(error instanceof Error ? error.message : "Job failed.");
-        }
-      };
-
-      poll();
-    },
-    [loadLayersAndMetadata]
-  );
-
-  // ---------------------------------------------------------
-  // ACTIONS
-  // ---------------------------------------------------------
-  function startDrawPolygon() {
-    if (!drawRef.current) return;
-    drawRef.current.deleteAll();
-    setAoi(null);
-    drawRef.current.changeMode("draw_polygon");
-    setStatus("DRAWING");
-    setMessage("Click on map to place polygon vertices. Click the initial vertex to close.");
-  }
-
-  function clearAOI() {
-    if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
-    drawRef.current?.deleteAll();
-    setAoi(null);
-    setJobId(null);
-    setStatus("READY");
-    setMessage("Draw an analysis area on the map.");
-    removeAllLayers();
-  }
-
-  async function analyze() {
-    if (!aoi) {
-      setStatus("ERROR");
-      setMessage("Draw an AOI before clicking Analyze.");
-      return;
-    }
-
-    try {
-      setStatus("SUBMITTING");
-      setMessage("Submitting job parameters to FloodScope API...");
-      removeAllLayers();
-
-      const response = await fetch(`${API}/api/v1/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          aoi,
-          flood_date: date,
-          config: "default",
-        }),
+    instance.on('draw.create', capture); instance.on('draw.update', capture);
+    instance.on('draw.delete', () => setAoi(null));
+    instance.on('load', () => {
+      definitions.forEach(definition => {
+        instance.addSource(definition.key, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        const paint: any = definition.kind === 'fill' ? { 'fill-color': definition.color, 'fill-opacity': definition.key === 'unobservable' ? 0.28 : 0.65 }
+          : definition.kind === 'line' ? { 'line-color': definition.color, 'line-width': 3 }
+          : { 'circle-radius': 6, 'circle-stroke-color': '#0f172a', 'circle-stroke-width': 1,
+              'circle-color': ['match', ['get', 'road_status'], 'potential_cut_off', '#f97316', 'unknown', '#94a3b8', '#facc15'] };
+        instance.addLayer({ id: definition.key + '-layer', type: definition.kind, source: definition.key, paint } as any);
+        instance.on('click', definition.key + '-layer', event => {
+          const props = event.features?.[0]?.properties || {};
+          const content = document.createElement('div');
+          content.style.color = '#0f172a'; content.style.maxWidth = '250px';
+          content.textContent = [definition.label, props.name || props.osm_id || '',
+            props.road_status || props.status || props.classification || '',
+            props.foot_status ? 'Foot access: ' + props.foot_status : '',
+            'Candidate evidence; field verification required.'].filter(Boolean).join(' · ');
+          new maplibregl.Popup().setLngLat(event.lngLat).setDOMContent(content).addTo(instance);
+        });
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API request failed: ${errorText}`);
-      }
-
-      const job: Job = await response.json();
-      const actualId = job.id || job.job_id;
-      if (!actualId) throw new Error("No job id returned from server");
-
-      setJobId(actualId);
-      setStatus(job.state);
-      setMessage(job.message);
-
-      monitorJob(actualId);
-    } catch (error) {
-      console.error(error);
-      setStatus("FAILED");
-      setMessage(error instanceof Error ? error.message : "Unable to reach backend.");
-    }
-  }
-
-  function toggleLayer(layerIds: string[], visible: boolean, setVisible: (v: boolean) => void) {
-    const map = mapRef.current;
-    if (!map) return;
-    const next = !visible;
-    const vis = next ? "visible" : "none";
-    layerIds.forEach((id) => {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
+      setReady(true);
     });
-    setVisible(next);
+    instance.on('error', event => setMessage('Map resource error: ' + event.error.message));
+    return () => { pollingVersion.current++; if (poll.current) clearTimeout(poll.current); setReady(false); instance.remove(); map.current = null; draw.current = null; };
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    definitions.forEach(({ key }) => {
+      (map.current!.getSource(key) as GeoJSONSource).setData((layers[key] || { type: 'FeatureCollection', features: [] }) as any);
+      map.current!.setLayoutProperty(key + '-layer', 'visibility', visible[key] ? 'visible' : 'none');
+    });
+  }, [layers, visible, ready]);
+
+  async function loadCase() {
+    try {
+      const selected = await request('/api/v1/cases/trishuli');
+      setAoi(selected.aoi); setDate(selected.flood_date);
+      draw.current?.deleteAll();
+      draw.current?.add({ type: 'Feature', properties: {}, geometry: selected.aoi });
+      const points = selected.aoi.coordinates.flat() as number[][];
+      const bounds = new maplibregl.LngLatBounds(); points.forEach(point => bounds.extend(point as [number, number]));
+      map.current?.fitBounds(bounds, { padding: 40 });
+      setMessage('Processed Trishuli area loaded. Choose a method and run analysis.');
+    } catch (error) { setStatus('ERROR'); setMessage(String(error)); }
   }
 
-  return (
-    <div className="app">
-      <header>
-        <div>
-          <div className="eyebrow">Multimodal AI Hackathon 2026 · Track B</div>
-          <h1>FloodScope</h1>
-          <p>Mapping Flood Damage from Space</p>
-        </div>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          {provenance?.cache_hit && (
-            <span className="badge-cache">CACHE HIT</span>
-          )}
-          <div className={`status-badge ${status.toLowerCase()}`}>{status}</div>
-        </div>
-      </header>
+  async function run() {
+    if (!aoi) return;
+    const version = ++pollingVersion.current;
+    if (poll.current) clearTimeout(poll.current);
+    setJob(null); setLayers({}); setStatus('PROCESSING'); setMessage('Validating satellite inputs...');
+    try {
+      const created = await request('/api/v1/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aoi, flood_date: date, config: method }) });
+      const started = Date.now();
+      const check = async () => {
+        if (version !== pollingVersion.current) return;
+        try {
+          const current: Job = await request('/api/v1/jobs/' + created.id);
+          if (version !== pollingVersion.current) return;
+          setStatus(current.state); setMessage(current.message);
+          if (current.state === 'COMPLETE') {
+            const output = await request('/api/v1/jobs/' + current.id + '/layers');
+            if (version !== pollingVersion.current) return;
+            setJob(current); setLayers(output);
+          } else if (current.state !== 'FAILED') {
+            if (Date.now() - started > 6 * 60 * 1000) { setStatus('ERROR'); setMessage('Polling timed out. Check the backend terminal; the job may still be running.'); }
+            else poll.current = setTimeout(check, 1500);
+          }
+        } catch (error) { setStatus('ERROR'); setMessage(String(error)); }
+      };
+      await check();
+    } catch (error) { setStatus('ERROR'); setMessage(String(error)); }
+  }
 
-      <main>
-        <aside>
-          <h2>Analyze Area</h2>
-
-          {/* DATE SELECTOR */}
-          <div>
-            <label htmlFor="flood-date">Flood date</label>
-            <input
-              id="flood-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-
-          {/* AOI TRIGGER & DELETE */}
-          <div className="aoi-box">
-            <strong>Analysis Area</strong>
-            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{ flex: 1 }}
-                onClick={startDrawPolygon}
-              >
-                ✏️ Draw Area
-              </button>
-
-              {aoi && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{
-                    padding: "8px 12px",
-                    borderColor: "#ef4444",
-                    color: "#f87171",
-                  }}
-                  onClick={clearAOI}
-                  title="Delete Polygon"
-                >
-                  🗑️
-                </button>
-              )}
-            </div>
-
-            {aoi ? (
-              <>
-                <span style={{ color: "#38bdf8", marginTop: "4px" }}>Polygon Locked</span>
-                <small>Valid GeoJSON AOI ready for processing.</small>
-              </>
-            ) : (
-              <small>Click "Draw Area" to sketch the boundary on the map.</small>
-            )}
-          </div>
-
-          {/* ACTIONS */}
-          <button
-            className="btn-primary"
-            onClick={analyze}
-            disabled={
-              !aoi ||
-              ["SUBMITTING", "DISCOVERING", "PROCESSING", "INFERENCE", "NETWORK_ANALYSIS", "REPORTING"].includes(status)
-            }
-          >
-            {["SUBMITTING", "DISCOVERING", "PROCESSING", "INFERENCE", "NETWORK_ANALYSIS", "REPORTING"].includes(status)
-              ? "Analyzing..."
-              : "Analyze"}
-          </button>
-
-          <button className="btn-secondary" onClick={clearAOI}>
-            Reset All
-          </button>
-
-          {/* METRIC OVERVIEW CARDS */}
-          {summary && (
-            <div className="summary-grid">
-              <div className="stat-card">
-                <span className="stat-value" style={{ color: "#ef4444" }}>
-                  {summary.settlements_cut_off ?? 0}
-                </span>
-                <span className="stat-label">Isolated Settlements</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value" style={{ color: "#f97316" }}>
-                  {summary.damaged_road_segments ?? 0}
-                </span>
-                <span className="stat-label">Impacted Road Segments</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value">
-                  {summary.total_settlements ?? 0}
-                </span>
-                <span className="stat-label">Total Settlements</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value">
-                  {summary.total_buildings ?? 0}
-                </span>
-                <span className="stat-label">Pre-event Buildings</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value" style={{ color: "#38bdf8" }}>
-                  {summary.viable_landing_zones ?? 0}
-                </span>
-                <span className="stat-label">Viable Landing Zones</span>
-              </div>
-              <div className="stat-card" style={{ gridColumn: "span 2" }}>
-                <span
-                  className="stat-value"
-                  style={{
-                    fontSize: "14px",
-                    color: summary.s2_optical_available ? "#10b981" : "#f43f5e",
-                  }}
-                >
-                  {summary.s2_optical_available ? "🛰️ Optical S2 Available" : "No Cloud-Free S2"}
-                </span>
-                <span className="stat-label">
-                  Scene: {summary.s2_optical_date} · Cloud: {summary.s2_cloud_cover}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* SITUATION REPORT & GIS EXPORT BUTTONS */}
-          {jobId && hasResults && (
-            <>
-              <a
-                href={`${API}/api/v1/jobs/${jobId}/report`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary"
-                style={{
-                  display: "block",
-                  textAlign: "center",
-                  textDecoration: "none",
-                  marginTop: "12px",
-                  borderColor: "#38bdf8",
-                  color: "#38bdf8",
-                  fontWeight: 600,
-                  background: "rgba(56, 189, 248, 0.1)",
-                }}
-              >
-                📄 View Situation Report
-              </a>
-
-              <a
-                href={`${API}/api/v1/jobs/${jobId}/export`}
-                download={`floodscope_export_${jobId}.zip`}
-                className="btn-secondary"
-                style={{
-                  display: "block",
-                  textAlign: "center",
-                  textDecoration: "none",
-                  marginTop: "8px",
-                  borderColor: "#10b981",
-                  color: "#10b981",
-                  fontWeight: 600,
-                  background: "rgba(16, 185, 129, 0.1)",
-                }}
-              >
-                📦 Export GIS Data (.zip)
-              </a>
-            </>
-          )}
-
-          {/* STATUS MESSAGE */}
-          <div className="message">
-            <strong>Status Info</strong>
-            <span>{message}</span>
-          </div>
-
-          {/* PROVENANCE DRAWER */}
-          {provenance && (
-            <div className="provenance-box">
-              <strong>Provenance</strong>
-              <div className="prov-row">
-                <span>OSM Snapshot:</span>
-                <code>{provenance.osm_snapshot}</code>
-              </div>
-              <div className="prov-row">
-                <span>Data Source:</span>
-                <span>ohsome v2 API</span>
-              </div>
-            </div>
-          )}
-
-          {/* LAYERS */}
-          <div className="legend">
-            <strong>Layers</strong>
-            <div className="legend-list">
-              <div className="legend-item">
-                <span>☑</span> OpenStreetMap
-              </div>
-              <div className="legend-item">
-                <span>{aoi ? "☑" : "□"}</span> Analysis AOI
-              </div>
-
-              {/* Hazard Fill Toggle */}
-              <button
-                type="button"
-                className="layer-toggle"
-                onClick={() =>
-                  toggleLayer(
-                    ["hazard-fill", "hazard-outline"],
-                    hazardVisible,
-                    setHazardVisible
-                  )
-                }
-                disabled={!hasResults}
-              >
-                <span>{hazardVisible && hasResults ? "☑" : "□"}</span>
-                <span className="hazard-swatch"></span>
-                Flood Hazard Extent
-              </button>
-
-              {/* Unobservable Layer Toggle[cite: 3] */}
-              <button
-                type="button"
-                className="layer-toggle"
-                onClick={() =>
-                  toggleLayer(
-                    ["unobservable-fill", "unobservable-outline"],
-                    unobservableVisible,
-                    setUnobservableVisible
-                  )
-                }
-                disabled={!hasResults}
-              >
-                <span>{unobservableVisible && hasResults ? "☑" : "□"}</span>
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    background: "#64748b",
-                    opacity: 0.7,
-                    display: "inline-block",
-                    border: "1px dashed #94a3b8",
-                  }}
-                ></span>
-                Unobservable (Radar Shadow)
-              </button>
-
-              {/* Damaged Roads Toggle */}
-              <button
-                type="button"
-                className="layer-toggle"
-                onClick={() =>
-                  toggleLayer(
-                    ["damaged-roads-layer"],
-                    roadsVisible,
-                    setRoadsVisible
-                  )
-                }
-                disabled={!hasResults}
-              >
-                <span>{roadsVisible && hasResults ? "☑" : "□"}</span>
-                <span
-                  style={{
-                    width: 12,
-                    height: 4,
-                    background: "#f97316",
-                    display: "inline-block",
-                  }}
-                ></span>
-                Impacted Roads
-              </button>
-
-              {/* Settlements Toggle */}
-              <button
-                type="button"
-                className="layer-toggle"
-                onClick={() =>
-                  toggleLayer(
-                    ["settlements-layer"],
-                    settlementsVisible,
-                    setSettlementsVisible
-                  )
-                }
-                disabled={!hasResults}
-              >
-                <span>{settlementsVisible && hasResults ? "☑" : "□"}</span>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#ef4444",
-                    display: "inline-block",
-                  }}
-                ></span>
-                Settlements Status
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        <section className="map-wrap">
-          <div ref={mapContainer} className="map" />
-        </section>
-      </main>
-    </div>
-  );
+  const busy = !['READY', 'ERROR', 'FAILED', 'COMPLETE'].includes(status);
+  const count = (key: string) => job?.summary[key] ?? 'Unknown / unavailable';
+  return <div className="trinetra-app">
+    <header><div><div className="eyebrow">Sentinel-1 · terrain · mapped infrastructure</div><h1>TRINETRA</h1><p>Candidate flood evidence and conditional access assessment</p></div><strong>{status}</strong></header>
+    <div className="trinetra-body"><aside>
+      <button onClick={loadCase} disabled={!ready || busy}>Load Trishuli test area</button>
+      <label>Flood date<input type="date" value={date} onChange={e => setDate(e.target.value)} disabled={busy} /></label>
+      <label>Detection method<select value={method} onChange={e => setMethod(e.target.value)} disabled={busy}>
+        <option value="baseline">Conservative deterministic baseline</option><option value="experimental_ai">Experimental Siamese U-Net pilot</option></select></label>
+      <button onClick={run} disabled={!aoi || busy || !ready}>Run integrated analysis</button>
+      <p role="status">{message}</p>
+      <p className="notice">This integration uses the existing processed Trishuli case. Other dates or areas need satellite processing first.</p>
+      {job && <><h2>Evidence summary</h2><dl>
+        <dt>Candidate flood area</dt><dd>{job.summary.candidate_area_km2.toFixed(4)} km²</dd>
+        <dt>Assessable by selected method</dt><dd>{(job.summary.assessable_fraction * 100).toFixed(1)}%</dd>
+        <dt>Unknown / unsupported area</dt><dd>{job.summary.unknown_area_km2.toFixed(4)} km²</dd>
+        <dt>Potentially affected mapped roads</dt><dd>{count('damaged_road_segments')}</dd>
+        <dt>Potentially affected mapped buildings</dt><dd>{count('affected_buildings')}</dd>
+        <dt>Potentially affected mapped bridges</dt><dd>{count('affected_bridges')}</dd>
+        <dt>Potential road-access loss</dt><dd>{count('settlements_cut_off')}</dd>
+        <dt>Settlements with unknown access</dt><dd>{count('settlements_access_unknown')}</dd>
+        <dt>OSM snapshot</dt><dd>{job.summary.osm_snapshot || 'Unavailable'}</dd></dl>
+        <p className="notice">Intersections are candidate impacts. Unknown terrain is not dry. No road, walking route or landing zone is certified safe.</p>
+        {job.summary.method === 'experimental_ai' && <p className="notice">Pilot AI results are experimental. Trishuli accuracy and flood probabilities are unverified.</p>}
+        <h2>Map layers</h2>{definitions.map(({ key, label, color }) => <label className="layer-choice" key={key}>
+          <input type="checkbox" checked={visible[key]} onChange={e => setVisible({ ...visible, [key]: e.target.checked })} />
+          <span style={{ color }}>●</span> {label}</label>)}
+        <h2>Data availability</h2>{Object.entries(job.summary.infrastructure_status).map(([name, state]) => <p key={name}>{name}: {String(state)}</p>)}
+        <div className="exports"><a href={API + '/api/v1/jobs/' + job.id + '/report'} target="_blank" rel="noreferrer">Situation report / PDF</a>
+          <a href={API + '/api/v1/jobs/' + job.id + '/export'}>Download results ZIP</a></div>
+        <details><summary>Sources and limitations</summary><p>Sentinel-1 before: {job.provenance.source_pair.pre_datetime}</p><p>After: {job.provenance.source_pair.post_datetime}</p>
+          <ul>{job.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details></>}
+    </aside><main ref={container} aria-label="Interactive flood and infrastructure map" /></div>
+  </div>;
 }
