@@ -1,0 +1,11 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Trishuli Bazaar discovery example",
+    "note": "Illustrative local AOI, not an official flood extent or evaluation boundary"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[85.10, 27.90], [85.20, 27.90], [85.20, 28.00], [85.10, 28.00], [85.10, 27.90]]]
+  }
+}
