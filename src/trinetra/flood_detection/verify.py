@@ -10,13 +10,24 @@ def verify_baseline(manifest,allow_pending=False):
     from rasterio.features import rasterize
     from rasterio.warp import transform_geom
     from PIL import Image
-    report = json.loads(Path(manifest).read_text())
+    report = json.loads(Path(manifest).read_text(encoding='utf-8-sig'))
     states = ['complete','outputs_written'] if allow_pending else ['complete']
     if report.get('status') not in states or report.get('score_is_probability') is not False:
         raise ValueError('Baseline report is not complete or mislabels score as probability')
     for key,source in report['inputs'].items():
         if _sha256(source['path'])!=source['sha256']:
             raise ValueError('Baseline input checksum changed: '+key)
+    processing = json.loads(Path(report['inputs']['processing_manifest']['path']).read_text(encoding='utf-8-sig'))
+    if report.get('case') != processing.get('case'):
+        raise ValueError('Baseline case differs from preprocessing provenance')
+    general = processing.get('case') != 'trishuli'
+    if general:
+        if (report.get('case') != processing.get('case')
+                or report.get('request_sha256') != processing.get('request_sha256')
+                or report.get('flood_date') != processing.get('flood_date')
+                or report.get('pair') != processing.get('source_pair')
+                or report.get('grid') != processing.get('grid')):
+            raise ValueError('Baseline provenance differs from the general processing case')
     data,reference = {},None
     for key,path in report['outputs'].items():
         if _sha256(path)!=report['output_sha256'][key]:
@@ -25,8 +36,18 @@ def verify_baseline(manifest,allow_pending=False):
             continue
         with rasterio.open(path) as src:
             current = (src.crs,src.transform,src.width,src.height)
-            if reference is not None and current!=reference or src.res!=(20,20) or src.crs.to_epsg()!=32645:
+            if (not src.crs or not src.crs.is_projected or src.crs.linear_units != 'metre'
+                    or (reference is not None and current!=reference)
+                    or src.res!=(20,20) or src.transform.a!=20 or src.transform.e!=-20
+                    or src.transform.b!=0 or src.transform.d!=0
+                    or (not general and src.crs.to_epsg()!=32645)):
                 raise ValueError('Baseline geographic grids differ')
+            if general:
+                expected = processing['grid']
+                actual = {'crs':src.crs.to_string(), 'width':src.width, 'height':src.height,
+                          'transform':list(src.transform)[:6]}
+                if actual != expected:
+                    raise ValueError('Baseline grid differs from the general processing grid')
             reference = current
             data[key] = src.read() if src.count>1 else src.read(1)
             if key=='flood_mask' and src.nodata!=255:
