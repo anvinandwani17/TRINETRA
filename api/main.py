@@ -1,6 +1,5 @@
 """TRINETRA API: verified Trishuli outputs and conditional infrastructure impact."""
 import asyncio
-import html
 import io
 import json
 import os
@@ -10,16 +9,19 @@ from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, FileResponse
 
-from api.schemas import AnalyzeRequest, JobState, RestoreEdgeRequest
-from api.integrated_jobs import create_job, get_job, public_job, run_job
-from api.satellite import case_aoi, load_satellite
+from api.schemas import AnalyzeRequest, JobState, RestoreEdgeRequest, PipelineRequest
+from api.integrated_jobs import create_job, get_job, public_job, run_job, run_pipeline_job, save_job, _JOBS
+from api.satellite import case_aoi, load_satellite, available_cases, data_root, ROOT
 from reports.grounded import report
+from reports.html_report import report_html
+from reports.credits import ATTRIBUTIONS
+from typing import Literal
 
 load_dotenv(Path(__file__).resolve().parents[1] / '.env', override=False)
 
-app = FastAPI(title='TRINETRA API', version='0.2.0')
+app = FastAPI(title='TRINETRA API', version='0.3.0')
 app.add_middleware(CORSMiddleware,
     allow_origins=os.getenv('TRINETRA_CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(','),
     allow_credentials=False, allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
@@ -40,11 +42,74 @@ def trishuli_case():
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.get('/api/v1/cases')
+def list_cases():
+    return {'cases': available_cases()}
+
+
+def preview_folder(case_id):
+    import re
+    if case_id == 'trishuli':
+        folder = Path(os.getenv('TRINETRA_CASE_DIR', str(ROOT/'data/processed/trishuli'))).resolve()
+    elif re.fullmatch(r'case-[a-f0-9]{16}', case_id):
+        folder = data_root()/'processed'/case_id
+    else:
+        raise HTTPException(404, 'Unknown case')
+    return folder
+
+
+@app.get('/api/v1/cases/{case_id}/previews')
+def list_previews(case_id: str, method: Literal['baseline', 'experimental_ai'] = 'baseline'):
+    folder = preview_folder(case_id)
+    choices = {'before':'previews/before.png','after':'previews/after.png',
+               'change':'previews/change.png','observability':'previews/observability.png',
+               'baseline':'baseline/previews/flood_mask.png'}
+    if method == 'experimental_ai':
+        choices.pop('baseline')
+        choices['experimental_ai'] = 'ai_flood_experimental/preview.png'
+    return {'method': method, 'previews': {key:f'/api/v1/cases/{case_id}/previews/{key}' for key,relative in choices.items() if (folder/relative).is_file()}}
+
+
+@app.get('/api/v1/cases/{case_id}/previews/{kind}')
+def get_preview(case_id: str, kind: str):
+    choices = {'before':'previews/before.png','after':'previews/after.png',
+               'change':'previews/change.png','observability':'previews/observability.png',
+               'baseline':'baseline/previews/flood_mask.png',
+               'experimental_ai':'ai_flood_experimental/preview.png'}
+    if kind not in choices:
+        raise HTTPException(404, 'Unknown preview type')
+    folder = preview_folder(case_id)
+    path = (folder/choices[kind]).resolve()
+    if not path.is_relative_to(folder) or not path.is_file():
+        raise HTTPException(404, 'Preview file is unavailable')
+    return FileResponse(path, media_type='image/png')
+
+
+@app.post('/api/v1/pipeline-jobs', status_code=202)
+async def start_pipeline_job(payload: PipelineRequest):
+    from trinetra.core.cases import make_case
+    try:
+        make_case(payload.aoi.model_dump(), payload.flood_date)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    active = sum(1 for job in _JOBS.values() if job.get('pipeline') and job['state'] not in {JobState.COMPLETE, JobState.FAILED})
+    if active >= 2:
+        raise HTTPException(429, 'One pipeline job is running and another is queued. Wait for them to finish.')
+    job = create_job(payload.flood_date, payload.aoi.model_dump(), 'baseline')
+    job['pipeline'] = True
+    job['message'] = 'Queued: baseline pipeline. Downloads are ' + ('enabled for the selected two scenes.' if payload.allow_downloads else 'disabled; existing cached data only.')
+    save_job(job)
+    task = asyncio.create_task(run_pipeline_job(job['id'], payload.allow_downloads, payload.transport, payload.max_product_gib))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
+    return public_job(job)
+
+
 @app.post('/api/v1/jobs')
 async def start_job(payload: AnalyzeRequest):
     try:
         await asyncio.to_thread(load_satellite, payload.aoi.model_dump(), payload.flood_date, payload.config)
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, RuntimeError) as exc:
         raise HTTPException(422, str(exc)) from exc
     job = create_job(payload.flood_date, payload.aoi.model_dump(), payload.config)
     task = asyncio.create_task(run_job(job['id']))
@@ -86,10 +151,7 @@ def get_job_provenance(job_id: str):
 def get_job_report(job_id: str, lang: str = 'en'):
     if lang != 'en':
         raise HTTPException(422, 'This grounded report currently supports English only')
-    text = html.escape(report(require_job(job_id, True)))
-    return HTMLResponse('<!doctype html><html lang="en"><meta charset="utf-8"><title>TRINETRA situation report</title>'
-        '<style>body{max-width:1000px;margin:32px auto;padding:20px;font-family:system-ui}pre{white-space:pre-wrap;line-height:1.6}'
-        '@media print{button{display:none}}</style><button onclick="window.print()">Print / PDF</button><pre>' + text + '</pre></html>')
+    return HTMLResponse(report_html(require_job(job_id, True)))
 
 
 @app.get('/api/v1/jobs/{job_id}/export')
@@ -100,8 +162,18 @@ def export_job_bundle(job_id: str):
         archive.writestr('summary.json', json.dumps(job['summary'], indent=2))
         archive.writestr('provenance.json', json.dumps(job['provenance'], indent=2))
         archive.writestr('SITREP.md', report(job))
+        archive.writestr('SITREP.html', report_html(job))
+        archive.writestr('ATTRIBUTION.md', ATTRIBUTIONS)
+        archive.writestr('EXPORT_README.txt',
+            'Candidate evidence and conditional impacts; no confirmed damage or safe routes.\n'
+            'candidate_affected_roads.geojson replaces the legacy damaged_roads export name.\n'
+            'API layer identifiers and existing job summaries retain their old keys for compatibility.\n'
+            'Empty layers mean no exported features, not necessarily available source data.\n'
+            'Check summary.json infrastructure_status and provenance.json limitations.\n'
+            'Raster/checkpoint hashes identify source files, which are not included in this result ZIP.\n')
         for name, layer in job['layers'].items():
-            archive.writestr(name + '.geojson', json.dumps(layer))
+            filename = 'candidate_affected_roads' if name == 'damaged_roads' else name
+            archive.writestr(filename + '.geojson', json.dumps(layer))
     return Response(buffer.getvalue(), media_type='application/zip',
         headers={'Content-Disposition': f'attachment; filename=trinetra_{job_id}.zip'})
 

@@ -1,4 +1,4 @@
-"""Evaluate a frozen proper-training checkpoint; never tune its threshold."""
+"""Evaluate a frozen fit/pilot checkpoint with explicit local coverage; never tune its threshold."""
 from pathlib import Path
 import sys
 import argparse

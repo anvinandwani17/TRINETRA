@@ -15,6 +15,45 @@ from pyproj import Transformer
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def data_root():
+    return Path(os.getenv('TRINETRA_DATA_DIR', str(ROOT / 'data'))).resolve()
+
+
+def resolve_case(aoi, flood_date, method='baseline'):
+    from trinetra.core.cases import make_case
+    request = make_case(aoi, flood_date)
+    requested = shape(request.aoi)
+    legacy = Path(os.getenv('TRINETRA_CASE_DIR', str(ROOT / 'data/processed/trishuli'))).resolve()
+    legacy_detection = legacy / ('baseline/baseline_manifest.json' if method == 'baseline' else 'ai_flood_experimental/inference_manifest.json')
+    if flood_date == '2026-08-26' and shape(case_aoi()).buffer(1e-8).covers(requested):
+        if (legacy / 'processing_manifest.json').is_file() and legacy_detection.is_file():
+            return 'trishuli', legacy, request
+    if method != 'baseline':
+        raise ValueError('Experimental AI is currently supported only for the saved Trishuli case; choose baseline for general cases')
+    return request.case_id, data_root() / 'processed' / request.case_id, request
+
+
+def available_cases():
+    result = [{'case':'trishuli', 'flood_date':'2026-08-26', 'aoi':case_aoi(),
+               'methods':['baseline','experimental_ai'], 'label':'Trishuli saved demo'}]
+    for folder in sorted((data_root() / 'processed').glob('case-*'))[:200]:
+        try:
+            processing = read_json(folder / 'processing_manifest.json')
+            detection = read_json(folder / 'baseline/baseline_manifest.json')
+            if processing.get('status') != 'complete' or detection.get('status') != 'complete':
+                continue
+            from trinetra.core.cases import make_case
+            request = make_case(processing['aoi'], processing['flood_date'])
+            if request.case_id != folder.name or request.fingerprint != processing.get('request_sha256'):
+                continue
+            result.append({'case':request.case_id, 'flood_date':request.flood_date,
+                           'aoi':request.aoi, 'methods':['baseline'],
+                           'label':request.case_id + ' — ' + request.flood_date})
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return result
+
+
 def digest(path):
     h = hashlib.sha256()
     with Path(path).open('rb') as stream:
@@ -47,27 +86,27 @@ def to_frame(geometry, properties=None):
 
 
 def load_satellite(aoi, flood_date, config='default'):
-    if flood_date != '2026-08-26':
-        raise ValueError('Only the processed Trishuli case for 2026-08-26 is available; run the satellite pipeline for other dates first')
     method = {'default': 'baseline', 'baseline': 'baseline', 'experimental_ai': 'experimental_ai'}.get(config)
     if not method:
         raise ValueError('Choose baseline or experimental_ai')
-    requested = shape(aoi)
-    known = shape(case_aoi())
+    case_id, folder, request = resolve_case(aoi, flood_date, method)
+    requested = shape(request.aoi)
     if not requested.is_valid or requested.is_empty or requested.geom_type != 'Polygon':
         raise ValueError('AOI must be a valid nonempty Polygon')
-    if not known.buffer(1e-8).covers(requested):
-        raise ValueError('AOI extends beyond the processed Trishuli area; load the Trishuli test area or draw inside it')
-    folder = Path(os.getenv('TRINETRA_CASE_DIR', str(ROOT / 'data/processed/trishuli')))
     processing = read_json(folder / 'processing_manifest.json')
-    if processing.get('status') != 'complete' or processing.get('case') != 'trishuli':
-        raise ValueError('Satellite preprocessing is not complete for Trishuli')
+    if processing.get('status') != 'complete' or processing.get('case') != case_id:
+        raise ValueError('Satellite preprocessing is not complete for the requested case')
+    if case_id != 'trishuli':
+        from trinetra.flood_detection.pipeline import general_processing_grid
+        general_processing_grid(processing, folder)
     if method == 'baseline':
         sub = folder / 'baseline'
         manifest = read_json(sub / 'baseline_manifest.json')
         keys = {'mask': 'flood_mask', 'geojson': 'flood_geojson', 'score': 'evidence_score'}
         if manifest.get('status') != 'complete':
             raise ValueError('Deterministic baseline is not complete')
+        if case_id != 'trishuli' and (manifest.get('case') != case_id or manifest.get('request_sha256') != request.fingerprint):
+            raise ValueError('Baseline identity differs from the requested case')
         pair = manifest.get('pair', {})
     else:
         sub = folder / 'ai_flood_experimental'
@@ -143,7 +182,7 @@ def load_satellite(aoi, flood_date, config='default'):
         if not geometry.is_valid or geometry.geom_type not in {'Polygon', 'MultiPolygon'}:
             raise ValueError('Invalid satellite candidate polygon')
     provenance = {
-        'method': method, 'case': 'trishuli', 'flood_date': flood_date,
+        'method': method, 'case': case_id, 'flood_date': flood_date,
         'source_pair': pair, 'raw_sha256': processing.get('raw_sha256'),
         'output_sha256': {role: digest(path) for role, path in files.items()},
         'processing_manifest_sha256': digest(folder / 'processing_manifest.json'),
@@ -155,6 +194,7 @@ def load_satellite(aoi, flood_date, config='default'):
         'full_export_candidate_pixels': manifest.get('candidate_pixels', manifest.get('summary', {}).get('candidate_pixels')),
     }
     summary = {
+        'case': case_id,
         'method': method, 'candidate_pixels': candidates,
         'candidate_area_km2': candidates * pixel_area / 1e6,
         'unknown_area_km2': unsupported * pixel_area / 1e6,
