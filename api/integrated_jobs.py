@@ -89,7 +89,7 @@ async def run_pipeline_job(job_id, allow_downloads=False, transport='s3', max_pr
         try:
             set_stage(job, JobState.PROCESSING, 'Verifying any existing processed satellite case...')
             try:
-                satellite = await asyncio.to_thread(load_satellite, job['aoi'], job['flood_date'], 'baseline')
+                satellite = await asyncio.to_thread(load_satellite, job['aoi'], job['flood_date'], job['config'])
                 job['cache_hit'] = True
                 job['selected_pair'] = satellite['provenance']['source_pair']
             except FileNotFoundError:
@@ -98,7 +98,12 @@ async def run_pipeline_job(job_id, allow_downloads=False, transport='s3', max_pr
                     allow_downloads=allow_downloads, transport=transport, max_product_gib=max_product_gib,
                     progress=lambda stage,message,details: set_stage(job, stage, message, details))
                 job['pipeline_trace'] = output['trace']
-                satellite = await asyncio.to_thread(load_satellite, job['aoi'], job['flood_date'], 'baseline')
+                if job['config']=='experimental_ai':
+                    from trinetra.core.general_ai import ensure_ai
+                    ai_output=await asyncio.to_thread(ensure_ai,job['aoi'],job['flood_date'],data_root(),
+                        progress=lambda stage,message,details:set_stage(job,stage,message,details))
+                    job['pipeline_trace']={'baseline':output['trace'],'ai':ai_output['trace']}
+                satellite = await asyncio.to_thread(load_satellite, job['aoi'], job['flood_date'], job['config'])
             await run_job(job_id, satellite=satellite)
         except Exception as exc:
             fail_job(job, exc)
@@ -156,7 +161,7 @@ async def run_job(job_id, satellite=None):
                      'Candidate-intersecting roads are removed only in a conditional scenario; field verification is required',
                      'Landing zones, Sentinel-2 availability and calibrated closure probabilities have not been assessed']
         if satellite['summary']['method'] == 'experimental_ai':
-            warnings.append('Experimental pilot model: Trishuli accuracy and model scores are not validated or calibrated')
+            warnings.append('Experimental pilot model: flood accuracy is not validated for the requested area; scores are not calibrated')
         provenance = {**satellite['provenance'], 'osm': osm, 'osm_snapshot': osm['snapshot_requested'],
                       'satellite_cache_hit':job['cache_hit'],
                       'cache_hit': any(value.get('cache_hit', False) for value in osm['layers'].values()),

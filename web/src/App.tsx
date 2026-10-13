@@ -60,7 +60,6 @@ export default function App() {
   const [visible, setVisible] = useState<Record<string, boolean>>(Object.fromEntries(definitions.map(x => [x.key, true])));
   const busy = !['READY', 'ERROR', 'FAILED', 'COMPLETE'].includes(status);
 
-  const aiAvailable = inputMode === 'saved' && !!aoi && cases.some(item => item.case === selectedCase && item.flood_date === date && item.methods.includes('experimental_ai'));
 
   function chooseInputMode(mode: 'custom' | 'saved') {
     resetDisplay(); setInputMode(mode); setAoi(null); setDate(''); setMethod('baseline'); setAllowDownloads(false);
@@ -175,9 +174,9 @@ export default function App() {
     if (poll.current) clearTimeout(poll.current);
     setJob(null); setTracking(null); setPreviews({}); setLayers({}); setStatus('PROCESSING'); setMessage('Validating area, date and satellite inputs...');
     try {
-      const created = await request(method === 'baseline' ? '/api/v1/pipeline-jobs' : '/api/v1/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const created = await request(inputMode === 'saved' && selectedCase === 'trishuli' && method === 'experimental_ai' ? '/api/v1/jobs' : '/api/v1/pipeline-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aoi, flood_date: date, config: method,
-          ...(method === 'baseline' ? {allow_downloads:allowDownloads, transport, max_product_gib:3.0} : {}) }) });
+          allow_downloads:allowDownloads, transport, max_product_gib:3.0 }) });
       setTracking(created);
       const started = Date.now();
       const check = async () => {
@@ -220,12 +219,12 @@ export default function App() {
       {inputMode === 'custom' && <button type="button" onClick={startDrawing} disabled={!ready || busy}>Draw area on map</button>}
       <label>Flood date (UTC day)<input type="date" value={date} max={new Date().toISOString().slice(0,10)} onChange={e => { resetDisplay(); setDate(e.target.value); if (inputMode === 'saved') { setInputMode('custom'); setSelectedCase(''); setMethod('baseline'); } }} disabled={busy} /></label>
       <label>Detection method<select value={method} onChange={e => { resetDisplay(); setMethod(e.target.value); }} disabled={busy}>
-        <option value="baseline">Conservative deterministic baseline</option><option value="experimental_ai" disabled={!aiAvailable}>Experimental AI — saved Trishuli only</option></select></label>
-      {method === 'baseline' && <><label className="layer-choice"><input type="checkbox" checked={allowDownloads} onChange={e => setAllowDownloads(e.target.checked)} disabled={busy} />Allow missing scene downloads (two scenes, up to 3 GiB each)</label>
+        <option value="baseline">Conservative deterministic baseline</option><option value="experimental_ai">Experimental AI — frozen pilot</option></select></label>
+      {<><label className="layer-choice"><input type="checkbox" checked={allowDownloads} onChange={e => setAllowDownloads(e.target.checked)} disabled={busy} />Allow missing scene downloads (two scenes, up to 3 GiB each)</label>
         {allowDownloads && <label>Official CDSE transport<select value={transport} onChange={e => setTransport(e.target.value)} disabled={busy}><option value="s3">S3</option><option value="odata">OData</option></select></label>}</>}
       <button onClick={run} disabled={!aoi || !date || busy || !ready}>Run integrated analysis</button>
       <p role="status">{message}</p>
-      <p className="notice">{method === 'experimental_ai' ? 'Experimental AI reads the saved Trishuli case only. Fresh inference is a separate CLI step; general-case AI is not available.' : <>Baseline: saved results are verified and reused. New local cases run discovery → download/cache → SNAP → detection → historical OSM → access → report. SNAP and local credentials are needed for uncached scenes. No suitable pair means no result.</>}</p>
+      <p className="notice">{method === 'experimental_ai' ? 'Experimental AI can process a bounded new area: physical preprocessing → separate linear Sigma0 → frozen CPU inference → infrastructure/report. Extra SNAP time is required. Accuracy and model scores are unverified; this is not the conservative baseline.' : <>Baseline: saved results are verified and reused. New local cases run discovery → download/cache → SNAP → detection → historical OSM → access → report. SNAP and local credentials are needed for uncached scenes. No suitable pair means no result.</>}</p>
       {tracking && <section className="pipeline-progress"><h2>Job stages</h2><a href={API + '/api/v1/jobs/' + tracking.id} target="_blank" rel="noreferrer">Job {tracking.id} status</a>
         <ol>{tracking.stage_history?.map((item,index) => <li key={index}>{item.stage}: {item.status}{item.elapsed_seconds !== undefined ? ' · ' + item.elapsed_seconds.toFixed(1) + ' s' : ''}</li>)}</ol>
         {tracking.estimated_download_bytes != null && <p>Catalogue estimate: {(tracking.estimated_download_bytes / 1024**3).toFixed(3)} GiB; cached products are reused.</p>}
@@ -242,7 +241,7 @@ export default function App() {
         <dt>Settlements with unknown access</dt><dd>{count('settlements_access_unknown')}</dd>
         <dt>OSM snapshot</dt><dd>{job.summary.osm_snapshot || 'Unavailable'}</dd></dl>
         <p className="notice">Intersections are candidate impacts. Unknown terrain is not dry. No road, walking route or landing zone is certified safe.</p>
-        {job.summary.method === 'experimental_ai' && <p className="notice">Pilot AI results are experimental. Trishuli accuracy and flood probabilities are unverified.</p>}
+        {job.summary.method === 'experimental_ai' && <p className="notice">Pilot AI results are experimental. Accuracy in the requested area and flood probabilities are unverified.</p>}
         <h2>Map layers</h2>{definitions.map(({ key, label, color }) => <label className="layer-choice" key={key}>
           <input type="checkbox" checked={visible[key]} onChange={e => setVisible({ ...visible, [key]: e.target.checked })} />
           <span style={{ color }}>●</span> {label}</label>)}

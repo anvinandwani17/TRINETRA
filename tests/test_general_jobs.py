@@ -94,7 +94,7 @@ def test_modified_saved_mask_fails_without_reprocessing(saved_case, monkeypatch)
     assert 'hash' in state['message']
 
 
-@pytest.mark.parametrize('change', [{'flood_date':'2999-01-01'}, {'config':'experimental_ai'},
+@pytest.mark.parametrize('change', [{'flood_date':'2999-01-01'}, {'config':'unsupported'},
                                   {'max_product_gib':4}, {'allow_downloads':'yes'},
                                   {'aoi':{'type':'Polygon','coordinates':[[[84,27],[85,27],[85,28],[84,28],[84,27]]]}}])
 def test_invalid_live_requests_rejected_before_jobs(change, monkeypatch, tmp_path):

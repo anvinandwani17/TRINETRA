@@ -16,6 +16,7 @@ class JobState(str, Enum):
     DOWNLOADING = "DOWNLOADING"
     PROCESSING = "PROCESSING"
     PREPROCESSING = "PREPROCESSING"
+    AI_PREPROCESSING = "AI_PREPROCESSING"
     DETECTING = "DETECTING"
     OSM_QUERYING = "OSM_QUERYING"
     INFERENCE = "INFERENCE"
@@ -37,7 +38,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class PipelineRequest(AnalyzeRequest):
-    config: Literal['baseline'] = 'baseline'
+    config: Literal['baseline', 'experimental_ai'] = 'baseline'
     allow_downloads: bool = Field(default=False, strict=True)
     transport: Literal['s3', 'odata'] = 's3'
     max_product_gib: float = Field(default=3.0, gt=0, le=3.0, allow_inf_nan=False)

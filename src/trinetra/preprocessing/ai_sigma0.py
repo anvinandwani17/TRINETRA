@@ -108,12 +108,20 @@ def write_raster(path,data,grid,descriptions,nodata):
     return str(Path(path).resolve())
 
 
-def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifest.json',prepare_only=False):
+def _preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifest.json',prepare_only=False):
     import rasterio
     parent_path=Path(parent_path).resolve();base=parent_path.parent
     parent=json.loads(parent_path.read_text(encoding='utf-8'))
-    if parent.get('case')!='trishuli' or parent.get('status')!='complete' or parent.get('resolution_m')!=20:
-        raise ValueError('Need a complete real Trishuli 20m preprocessing manifest')
+    if parent.get('status')!='complete' or parent.get('resolution_m')!=20:
+        raise ValueError('Need a complete real 20m physical preprocessing manifest')
+    general = parent.get('case') != 'trishuli'
+    if general:
+        from trinetra.core.ai_contract import general_identity
+        general_identity(parent)
+        from trinetra.flood_detection.pipeline import load_inputs
+        load_inputs(parent_path)
+        if parent['grid']['width']*parent['grid']['height']*4 > 4_000_000:
+            raise ValueError('Experimental 10m grid exceeds four million pixels; choose a smaller area')
     if not parent.get('checks',{}).get('shadow_layover_never_observable'):
         raise ValueError('Physical shadow/layover exclusion must already be verified')
     out=base/'ai_sigma0_10m';out.mkdir(exist_ok=True)
@@ -129,7 +137,7 @@ def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifes
         target.with_suffix('.graph.xml').write_text(graph,encoding='utf-8')
         signature=hashlib.sha256((graph+_sha256(source)+_sha256(parent_path)).encode()).hexdigest()
         jobs[role]={'target':target,'graph':graph,'signature':signature}
-    report={'case':'trishuli','status':'graphs_prepared_only' if prepare_only else 'running',
+    report={'case':parent['case'],'status':'graphs_prepared_only' if prepare_only else 'running',
             'source_pair':parent['source_pair'],'raw_sha256':parent['raw_sha256'],'reference':REFERENCE,
             'radiometry':'linear Sigma0; Lee Sigma 7x7 window, 3x3 target, sigma 0.9; terrain correction',
             'resolution_m':10,'dem':parent['dem'],'outputs':{},
@@ -139,6 +147,9 @@ def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifes
                            'S1D input differs from S1A/B training sensors',
                            'UTM grid differs from the published preprocessing projection',
                            'Matching selected processing settings does not validate model accuracy']}
+    if general:
+        report.update(aoi=parent['aoi'], flood_date=parent['flood_date'], request_sha256=parent['request_sha256'],
+                      parent_processing_manifest=str(parent_path), parent_processing_manifest_sha256=_sha256(parent_path))
     marker=out/('prepared_graphs_manifest.json' if prepare_only else 'ai_processing_manifest.json')
     atomic_json(marker,report)
     if prepare_only:return report
@@ -153,6 +164,9 @@ def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifes
             scenes[role]=aligned_sigma(bands,mask)
         pre,obs,grid=scenes['pre'];post,post_obs,post_grid=scenes['post']
         if grid!=post_grid or not np.array_equal(obs,post_obs):raise ValueError('Pre/post grids or masks differ')
+        if general:
+            from trinetra.core.ai_contract import clip_observability
+            obs=clip_observability(obs,grid,parent['aoi'])
         usable=(obs==1)&np.all(np.isfinite(pre)&(pre>0)&np.isfinite(post)&(post>0),axis=0)
         if not usable.any():raise ValueError('No jointly observable Sigma0 pixels remain')
         obs=np.where(obs==255,255,np.where(usable,1,0)).astype(np.uint8)
@@ -168,3 +182,30 @@ def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifes
         atomic_json(marker,report);return report
     except Exception as exc:
         report['status']='failed';report['error']=str(exc);atomic_json(marker,report);raise
+
+
+def preprocess_ai_sigma0(parent_path='data/processed/trishuli/processing_manifest.json',prepare_only=False):
+    parent_path=Path(parent_path).resolve()
+    parent=json.loads(parent_path.read_text(encoding='utf-8-sig'))
+    if parent.get('case')=='trishuli':
+        return _preprocess_ai_sigma0(parent_path,prepare_only)
+    from trinetra.core.ai_contract import general_identity
+    general_identity(parent)
+    from trinetra.flood_detection.pipeline import load_inputs
+    load_inputs(parent_path)
+    out=parent_path.parent/'ai_sigma0_10m'
+    out.mkdir(exist_ok=True)
+    marker=out/'ai_processing_manifest.json'
+    if not prepare_only and marker.is_file():
+        record=json.loads(marker.read_text(encoding='utf-8-sig'))
+        if record.get('status')=='complete_experimental':
+            if record.get('parent_processing_manifest_sha256')!=_sha256(parent_path):
+                raise ValueError('Cached AI inputs belong to another physical manifest; no outputs replaced')
+            if not record.get('outputs') or any(not Path(p).is_file() or _sha256(p)!=record.get('output_sha256',{}).get(k) for k,p in record['outputs'].items()):
+                raise ValueError('Completed AI inputs are missing/corrupt; no repair fallback')
+            print('Verified general Sigma0 cache reused',flush=True)
+            return record
+    lock=out/'.ai_preprocess.lock'
+    with lock.open('x') as handle:handle.write(str(__import__('os').getpid()))
+    try:return _preprocess_ai_sigma0(parent_path,prepare_only)
+    finally:lock.unlink(missing_ok=True)

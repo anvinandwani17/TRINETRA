@@ -50,8 +50,14 @@ def run_case(manifest_path,checkpoint_path,config_path,output):
     manifest_path=Path(manifest_path).resolve();checkpoint_path=Path(checkpoint_path).resolve();config_path=Path(config_path).resolve()
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     parent=json.loads(manifest_path.read_text(encoding='utf-8'))
-    if parent.get('case')!='trishuli' or parent.get('status')!='complete_experimental' or parent.get('resolution_m')!=10:
-        raise ValueError('Require completed experimental Trishuli 10m Sigma0 preprocessing')
+    if parent.get('status')!='complete_experimental' or parent.get('resolution_m')!=10:
+        raise ValueError('Require completed experimental 10m Sigma0 preprocessing')
+    general=parent.get('case')!='trishuli'
+    if general:
+        from trinetra.core.ai_contract import validate_ai_parent
+        request,physical,expected=validate_ai_parent(parent,manifest_path)
+        if output!=manifest_path.parent.parent/'ai_flood_experimental':
+            raise ValueError('General inference output must stay in its own case folder')
     if not parent.get('radiometry','').startswith('linear Sigma0;'):
         raise ValueError('Only linear Sigma0 inputs are supported; never log dB inputs again')
     check=inspect_checkpoint(checkpoint_path,config_path)
@@ -67,12 +73,34 @@ def run_case(manifest_path,checkpoint_path,config_path,output):
             grid=current
             if src.count!=count or src.crs is None or not np.allclose(src.res,[10,10]):raise ValueError('Invalid input bands/grid')
             if key!='observability' and src.descriptions!=('VV_linear','VH_linear'):raise ValueError('VV/VH order is not documented')
+            if general:
+                from affine import Affine
+                if (current['crs'].to_string()!=expected['crs'] or current['transform']!=expected['transform']*Affine.scale(.5,.5)
+                        or current['width']!=expected['width']*2 or current['height']!=expected['height']*2):
+                    raise ValueError('AI grid differs from its physical case grid')
             scenes[key]=src.read() if count==2 else src.read(1)
+    if general:
+        from trinetra.core.ai_contract import clip_observability
+        obs=scenes['observability']
+        if not np.array_equal(obs,clip_observability(obs,grid,request.aoi)):
+            raise ValueError('AI observability extends outside its requested AOI')
+        import rasterio
+        from rasterio.warp import reproject, Resampling
+        with rasterio.open(physical['outputs']['observability']) as src:
+            if _sha256(physical['outputs']['observability'])!=physical['output_sha256']['observability']:
+                raise ValueError('Physical observability checksum changed')
+            inherited=np.full(obs.shape,255,dtype='uint8')
+            reproject(src.read(1),inherited,src_transform=src.transform,src_crs=src.crs,src_nodata=255,
+                      dst_transform=grid['transform'],dst_crs=grid['crs'],dst_nodata=255,resampling=Resampling.nearest)
+        if np.any((obs==1)&(inherited!=1)):
+            raise ValueError('AI inputs mark physical unknown terrain as observable')
     if marker.exists():
         cached=json.loads(marker.read_text(encoding='utf-8'))
         if cached.get('status')=='complete_experimental' and cached.get('signature')==signature and all(Path(p).is_file() and _sha256(p)==cached.get('output_sha256',{}).get(k) for k,p in cached.get('outputs',{}).items()) and cached.get('outputs'):
             print('Verified inference cache reused',flush=True);return cached
-    if grid['height']*grid['width']>4_000_000:raise ValueError('Only bounded Trishuli inference is supported')
+        if general and cached.get('status')=='complete_experimental':
+            raise ValueError('Completed AI cache differs from inputs/model or is corrupt; no outputs replaced')
+    if grid['height']*grid['width']>4_000_000:raise ValueError('AI inference exceeds the bounded grid')
     obs=scenes['observability']
     if not np.isin(obs,[0,1,255]).all():raise ValueError('Invalid observability codes')
     x,valid=normalize_linear(scenes['before_sigma0_linear'],scenes['after_sigma0_linear'],obs)
@@ -108,7 +136,7 @@ def run_case(manifest_path,checkpoint_path,config_path,output):
     for ax in axes:ax.axis('off')
     fig.tight_layout();png=output/'preview.png';fig.savefig(png,dpi=150);plt.close(fig);outputs['preview']=str(png)
     candidate_pixels=int((mask==1).sum())
-    report={'case':'trishuli','status':'complete_experimental','signature':signature,'outputs':outputs,
+    report={'case':parent['case'],'status':'complete_experimental','signature':signature,'outputs':outputs,
             'output_sha256':{k:_sha256(p) for k,p in outputs.items()},'checkpoint_mode':check['mode'],
             'source_pair':parent['source_pair'],'threshold':0.5,'threshold_tuned':False,'training_performed':False,
             'observable_pixels':int(valid.sum()),'unknown_inside_aoi_pixels':int(((obs!=255)&~valid).sum()),
@@ -116,4 +144,9 @@ def run_case(manifest_path,checkpoint_path,config_path,output):
             'domain_compatibility_verified':False,'probability_calibrated':False,
             'limitations':parent['limitations']+['Pilot predictions are not validated Trishuli flood extents','Sigmoid scores are not calibrated flood probabilities','Overlap averaging reduces seams but tiling and GroupNorm can affect outputs'],
             'operational_fallback':'existing deterministic detector'}
+    if general:
+        report.update(aoi=request.aoi, flood_date=request.flood_date, request_sha256=request.fingerprint,
+                      checkpoint_sha256=check['sha256'],raw_sha256=parent['raw_sha256'],
+                      parent_processing_manifest_sha256=parent['parent_processing_manifest_sha256'])
+        report['limitations']=[x.replace('Trishuli','the requested area') for x in report['limitations']]
     atomic_json(marker,report);return report

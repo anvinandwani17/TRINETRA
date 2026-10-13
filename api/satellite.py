@@ -28,8 +28,6 @@ def resolve_case(aoi, flood_date, method='baseline'):
     if flood_date == '2026-08-26' and shape(case_aoi()).buffer(1e-8).covers(requested):
         if (legacy / 'processing_manifest.json').is_file() and legacy_detection.is_file():
             return 'trishuli', legacy, request
-    if method != 'baseline':
-        raise ValueError('Experimental AI is currently supported only for the saved Trishuli case; choose baseline for general cases')
     return request.case_id, data_root() / 'processed' / request.case_id, request
 
 
@@ -47,7 +45,7 @@ def available_cases():
             if request.case_id != folder.name or request.fingerprint != processing.get('request_sha256'):
                 continue
             result.append({'case':request.case_id, 'flood_date':request.flood_date,
-                           'aoi':request.aoi, 'methods':['baseline'],
+                           'aoi':request.aoi, 'methods':['baseline','experimental_ai'],
                            'label':request.case_id + ' — ' + request.flood_date})
         except (OSError, ValueError, KeyError, TypeError):
             continue
@@ -114,6 +112,9 @@ def load_satellite(aoi, flood_date, config='default'):
         keys = {'mask': 'mask', 'geojson': 'geojson', 'score': 'score'}
         if manifest.get('status') != 'complete_experimental':
             raise ValueError('Experimental AI inference is not complete')
+        if case_id!='trishuli' and (manifest.get('case')!=case_id or manifest.get('request_sha256')!=request.fingerprint
+                or manifest.get('parent_processing_manifest_sha256')!=digest(folder/'processing_manifest.json')):
+            raise ValueError('AI identity or physical parent differs from the requested case')
         pair = manifest.get('source_pair', {})
     if pair != processing.get('source_pair'):
         raise ValueError('Detection and preprocessing refer to different satellite pairs')
@@ -181,6 +182,17 @@ def load_satellite(aoi, flood_date, config='default'):
         geometry = shape(feature['geometry'])
         if not geometry.is_valid or geometry.geom_type not in {'Polygon', 'MultiPolygon'}:
             raise ValueError('Invalid satellite candidate polygon')
+    limitations = manifest.get('limitations', []) + processing.get('limitations', [])
+    if method == 'experimental_ai':
+        wording = {
+            '20 m is output grid spacing, not verified effective resolution or alignment accuracy':
+                f"The parent physical processing grid is {processing.get('resolution_m', 20):g} m; the AI output grid is {resolution:g} m. Grid spacing does not establish effective resolution or alignment accuracy",
+            'Pilot predictions are not validated the requested area flood extents':
+                'Pilot flood predictions have not been validated for the requested area',
+            'Pilot predictions are not validated Trishuli flood extents':
+                'Pilot flood predictions have not been validated for the requested area',
+        }
+        limitations = [wording.get(item, item) for item in limitations]
     provenance = {
         'method': method, 'case': case_id, 'flood_date': flood_date,
         'source_pair': pair, 'raw_sha256': processing.get('raw_sha256'),
@@ -188,7 +200,7 @@ def load_satellite(aoi, flood_date, config='default'):
         'processing_manifest_sha256': digest(folder / 'processing_manifest.json'),
         'detection_manifest_sha256': digest(sub / ('baseline_manifest.json' if method == 'baseline' else 'inference_manifest.json')),
         'resolution_m': resolution, 'probability_calibrated': False,
-        'limitations': manifest.get('limitations', []) + processing.get('limitations', []),
+        'limitations': limitations,
         'checkpoint_sha256': manifest.get('signature', {}).get('checkpoint'),
         'aoi_policy': 'Raster decisions are clipped to the requested AOI; resampled edge cells outside it are excluded',
         'full_export_candidate_pixels': manifest.get('candidate_pixels', manifest.get('summary', {}).get('candidate_pixels')),

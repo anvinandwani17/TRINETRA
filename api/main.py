@@ -95,9 +95,9 @@ async def start_pipeline_job(payload: PipelineRequest):
     active = sum(1 for job in _JOBS.values() if job.get('pipeline') and job['state'] not in {JobState.COMPLETE, JobState.FAILED})
     if active >= 2:
         raise HTTPException(429, 'One pipeline job is running and another is queued. Wait for them to finish.')
-    job = create_job(payload.flood_date, payload.aoi.model_dump(), 'baseline')
+    job = create_job(payload.flood_date, payload.aoi.model_dump(), payload.config)
     job['pipeline'] = True
-    job['message'] = 'Queued: baseline pipeline. Downloads are ' + ('enabled for the selected two scenes.' if payload.allow_downloads else 'disabled; existing cached data only.')
+    job['message'] = 'Queued: ' + payload.config + ' pipeline. Downloads are ' + ('enabled for the selected two scenes.' if payload.allow_downloads else 'disabled; existing cached data only.')
     save_job(job)
     task = asyncio.create_task(run_pipeline_job(job['id'], payload.allow_downloads, payload.transport, payload.max_product_gib))
     _TASKS.add(task)

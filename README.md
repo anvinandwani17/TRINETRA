@@ -4,7 +4,7 @@ Sentinel-1 flood evidence, terrain observability, mapped infrastructure and cond
 
 Anvi owns the satellite/flood-AI Python package in `src/trinetra`. Arnav owns the React/API/infrastructure side in `web`, `api`, `network` and `reports`. The active integrated API is **`api.main:app`**.
 
-The baseline supports saved cases and a general local AOI/date pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic detection → historical OSM → conditional access → report. AOIs are bounded to 300 km² and must have a suitable same-orbit Sentinel-1 pair. Downloads are disabled by default and must be enabled for missing scene data. The saved **Trishuli / 26 August 2026** baseline and experimental AI demo remain available. General-case AI inference is still pending.
+The baseline supports saved cases and a general local AOI/date pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic detection → historical OSM → conditional access → report. AOIs are bounded to 300 km² and must have a suitable same-orbit Sentinel-1 pair. Downloads are disabled by default and must be enabled for missing scene data. The saved **Trishuli / 26 August 2026** baseline and experimental AI demo remain available. General-case experimental AI is implemented in the new pipeline; fresh laptop validation is required. See docs/general_ai.md.
 
 ## Run locally on Windows
 
@@ -45,7 +45,7 @@ See [docs/integration.md](docs/integration.md) for the data contract, exact setu
 
 ## Evidence and reproducibility
 
-Read [methodology](docs/methodology.md), [source attribution](docs/ATTRIBUTION.md) and [reproducibility setup](docs/reproducibility.md). The supplied AI pilot used 104 training samples from 15 events and 2 validation samples from 2 events; no generalization result is claimed. Frozen pilot evaluation reports the exact locally cached coverage. HAND/debris/S2 and general-case AI remain pending.
+Read [methodology](docs/methodology.md), [source attribution](docs/ATTRIBUTION.md) and [reproducibility setup](docs/reproducibility.md). The supplied AI pilot used 104 training samples from 15 events and 2 validation samples from 2 events; no generalization result is claimed. Frozen pilot evaluation reports the exact locally cached coverage. HAND/debris/S2 remain pending. General-case AI execution is experimental and requires separate Sigma0 preprocessing.
 
 Reports now render headings and tables for browser printing. ZIP exports include a standalone HTML report, attribution and export semantics. The AI preview is selected by method; an unavailable preview is omitted rather than replaced by baseline imagery.
 
