@@ -4,7 +4,7 @@ Sentinel-1 flood evidence, terrain observability, mapped infrastructure and cond
 
 Anvi owns the satellite/flood-AI Python package in `src/trinetra`. Arnav owns the React/API/infrastructure side in `web`, `api`, `network` and `reports`. The active integrated API is **`api.main:app`**.
 
-The current integration uses the existing **Trishuli / 26 August 2026** processed case. It keeps the conservative deterministic baseline and experimental Siamese U-Net pilot separate, validates real output hashes, and exposes candidate/unknown layers to the map and grounded report. Other dates and AOIs require satellite processing first.
+The baseline supports saved cases and a general local AOI/date pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic detection → historical OSM → conditional access → report. AOIs are bounded to 300 km² and must have a suitable same-orbit Sentinel-1 pair. Downloads are disabled by default and must be enabled for missing scene data. The saved **Trishuli / 26 August 2026** baseline and experimental AI demo remain available. General-case experimental AI is implemented in the new pipeline; fresh laptop validation is required. See docs/general_ai.md.
 
 ## Run locally on Windows
 
@@ -12,8 +12,8 @@ Use Python 3.12 and your active virtual environment. Vite requires Node.js 20.19
 
 ```powershell
 python -m pip install -r requirements-integration.txt
-python scripts/check_integration.py
 python -m pytest tests -q --tb=short
+$env:SNAP_GPT = "C:\Program Files\esa-snap\bin\gpt.exe"
 python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -26,7 +26,7 @@ npm run build
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Open http://127.0.0.1:5173 and click **Load Trishuli test area**. Existing local case files must be in `data/processed/trishuli`; they are not included in Git. This integration does not download scenes or train a model.
+Open http://127.0.0.1:5173, select a saved case and click **Load selected saved area**, or draw a local Polygon and choose a historical UTC day. Keep baseline selected for general cases. Existing case files are not included in Git. Cached satellite results are hash-verified and reused; missing scenes require the explicit download option. The pipeline never trains a model. Run stages, actual elapsed times, source availability, preview links and report/export results are displayed.
 
 ## Credentials
 
@@ -40,4 +40,13 @@ Results are candidate flood detections and conditional road-access scenarios. Th
 
 Exports include satellite IDs, timestamps, hashes, method, historical OSM snapshot, source availability and limitations. Keep raw scenes, model weights, raster outputs and private keys outside Git.
 
-See [docs/integration.md](docs/integration.md) for the data contract, exact setup, validation and limitations. Use `scripts/run_integrated_case.py` for the connected CLI and `scripts/run_satellite_case.py` for Anvi's separate discovery/download pipeline. Earlier demo runner modules are not used by the active integrated flow.
+See [docs/integration.md](docs/integration.md) for the data contract, exact setup, validation and limitations. Use `scripts/run_general_pipeline.py --aoi examples/terai_discovery.geojson --date 2026-09-10` for the single-command baseline workflow; add `--allow-downloads` only for missing raw scenes. See [docs/general_pipeline_step5.md](docs/general_pipeline_step5.md) for the current workflow and remaining limitations. Existing separate scripts remain available for diagnostics. Earlier demo runner modules are not used by the active integrated flow.
+
+
+## Evidence and reproducibility
+
+Read [methodology](docs/methodology.md), [source attribution](docs/ATTRIBUTION.md) and [reproducibility setup](docs/reproducibility.md). The supplied AI pilot used 104 training samples from 15 events and 2 validation samples from 2 events; no generalization result is claimed. Frozen pilot evaluation reports the exact locally cached coverage. HAND/debris/S2 remain pending. General-case AI execution is experimental and requires separate Sigma0 preprocessing.
+
+Reports now render headings and tables for browser printing. ZIP exports include a standalone HTML report, attribution and export semantics. The AI preview is selected by method; an unavailable preview is omitted rather than replaced by baseline imagery.
+
+Project code licensing is not yet declared. Source attribution and third-party data terms do not grant a license to this project's code. Do not represent the release as complete until assets are published, hash-checked and accessible to another machine.

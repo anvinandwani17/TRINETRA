@@ -173,15 +173,27 @@ def fit(root, out, sanity_report, epochs=20, batch_size=8, base_channels=16, see
 def evaluate_checkpoint(root, checkpoint_path, split, output):
     if split not in ['validation', 'test']: raise ValueError('Evaluate only validation or held-out test')
     saved = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
-    if saved['config']['mode'] != 'fit' or saved['transform'] != TRANSFORM or saved['threshold'] != 0.5:
-        raise ValueError('Evaluate a proper-training checkpoint with the fixed input transform/threshold')
+    from trinetra.models.checkpoint import inspect_checkpoint
+    check = inspect_checkpoint(checkpoint_path)
+    if saved['config']['mode'] not in {'fit', 'pilot'} or saved['transform'] != TRANSFORM or saved['threshold'] != 0.5:
+        raise ValueError('Evaluate a trained fit/pilot checkpoint with the fixed input transform/threshold')
+    torch.set_num_threads(min(2, os.cpu_count() or 1))
     dataset = TrainingDataset(root, split)
-    if set(dataset.event_ids) & set(saved['data']['train_events']): raise ValueError('Evaluation events overlap training')
-    if dataset.report['split_sha256'] != saved['data']['split_sha256']: raise ValueError('Evaluation partition changed')
+    from trinetra.training.evaluation_contract import evaluation_coverage
+    coverage = evaluation_coverage(saved['data'], dataset.report, dataset.event_ids, len(dataset), split)
     model = SiameseUNet(saved['config']['base_channels']); model.load_state_dict(saved['model_state'])
     loader = DataLoader(dataset, batch_size=saved['config']['batch_size'], shuffle=False, num_workers=0)
     scores = evaluate(model, loader, torch.device('cpu'))
     result = {'split': split, 'samples': len(dataset), 'events': dataset.event_ids,
               'checkpoint': str(checkpoint_path), 'threshold': 0.5, 'threshold_tuned': False,
-              'excluded': ['Trishuli', 'EMSR927'], 'metrics': scores}
+              'excluded': ['Trishuli', 'EMSR927'], 'metrics': scores,
+              'checkpoint_sha256': check['sha256'], 'checkpoint_mode': saved['config']['mode'],
+              'evaluated_local_manifest_sha256': dataset.fingerprint,
+              'split_sha256': dataset.report['split_sha256'],
+              **coverage,
+              'training_performed': False, 'probability_calibrated': False,
+              'limitations': ['Metrics cover only the locally cached samples listed here',
+                             'Validation events selected the checkpoint; validation is not an independent test',
+                             'Kuro Siwo metrics do not validate Trishuli or Himalayan domain compatibility',
+                             'Pilot training coverage remains partial; evaluation does not retrain the model']}
     atomic_json(Path(output), result); return result

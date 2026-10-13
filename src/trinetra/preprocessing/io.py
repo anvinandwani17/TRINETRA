@@ -49,14 +49,19 @@ def common_grid(geometry, resolution=20):
     from shapely.ops import transform
     from pyproj import Transformer
     from rasterio.transform import from_origin
-    polygon = shape(geometry)
-    if polygon.is_empty or not polygon.is_valid or polygon.geom_type not in {'Polygon','MultiPolygon'}:
-        raise DownloadError('AOI must be a valid Polygon/MultiPolygon')
+    from trinetra.discovery.sentinel1 import _Coverage
+    if isinstance(resolution, bool) or not isinstance(resolution, (int, float)) or not math.isfinite(resolution) or not 1 <= resolution <= 100:
+        raise DownloadError('Grid spacing must be finite and between 1 and 100 meters')
+    try:
+        coverage = _Coverage(geometry)
+    except ValueError as exc:
+        raise DownloadError(str(exc)) from exc
+    if coverage.area > 300 * 1e6:
+        raise DownloadError('Pilot preprocessing AOI limit is 300 km2')
+    polygon = coverage.aoi
     center = polygon.centroid
-    if not (84.5 <= polygon.bounds[0] < polygon.bounds[2] <= 85.6 and 27.6 <= polygon.bounds[1] < polygon.bounds[3] <= 28.8):
-        raise DownloadError('First preprocessing runner accepts only local Trishuli AOIs')
-    zone = int((center.x + 180) // 6) + 1
-    crs = f'EPSG:{32600 + zone}'
+    zone = min(60, max(1, int((center.x + 180) // 6) + 1))
+    crs = f'EPSG:{(32600 if center.y >= 0 else 32700) + zone}'
     project = Transformer.from_crs('EPSG:4326', crs, always_xy=True)
     projected = transform(project.transform, polygon)
     left, bottom, right, top = projected.bounds
@@ -68,10 +73,15 @@ def common_grid(geometry, resolution=20):
     profile = {'crs': crs, 'transform': from_origin(left, top, resolution, resolution), 'width': width, 'height': height}
     from rasterio.features import geometry_mask
     inside = geometry_mask([projected.__geo_interface__], (height,width), profile['transform'], invert=True)
+    if not inside.any():
+        raise DownloadError('AOI has no pixel centers at the requested grid spacing')
     # Twenty km terrain context; this is a bounded regional crop, not a global request.
     context = projected.buffer(20_000).envelope
     unproject = Transformer.from_crs(crs, 'EPSG:4326', always_xy=True)
     context_geo = transform(unproject.transform, context)
+    west, south, east, north = context_geo.bounds
+    if not context_geo.is_valid or east - west > 2 or south < -80 or north > 84:
+        raise DownloadError('Terrain context crosses the dateline or supported UTM limits; choose another local AOI')
     return profile, inside, context_geo.wkt
 
 

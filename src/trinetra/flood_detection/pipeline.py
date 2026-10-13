@@ -1,4 +1,4 @@
-"""Verified Trishuli preprocessing to deterministic raster/vector/preview outputs."""
+"""Verified preprocessing to deterministic outputs for Trishuli or general cases."""
 from dataclasses import asdict
 from pathlib import Path
 import json
@@ -6,6 +6,32 @@ import numpy as np
 from trinetra.downloads.sentinel1 import atomic_json, _sha256, now, DownloadError
 from trinetra.preprocessing.io import _warp, write_tif
 from .baseline import BaselineConfig, detect_flood, terrain_slope, REASONS
+
+
+def general_processing_grid(report, folder):
+    from trinetra.preprocessing.pipeline import checked_general_request
+    from trinetra.preprocessing.io import common_grid
+    if report.get('status') != 'complete':
+        raise DownloadError('General baseline requires completed physical preprocessing')
+    request = checked_general_request({
+        'case': report.get('case'), 'flood_date': report.get('flood_date'),
+        'aoi': report.get('aoi'), 'request_sha256': report.get('request_sha256'),
+        'aoi_fingerprint': report.get('request_sha256'), 'pair': report.get('source_pair', {})})
+    if folder.name != request.case_id:
+        raise DownloadError('General processing manifest must be in its own case folder')
+    checks = report.get('checks', {})
+    if (checks.get('shared_crs_transform_shape') != 'passed'
+            or checks.get('geotiff_roundtrip') != 'passed'
+            or checks.get('unknown_change_is_nan') is not True
+            or checks.get('shadow_layover_never_observable') is not True):
+        raise DownloadError('General preprocessing quality checks have not passed')
+    expected, _, _ = common_grid(request.aoi)
+    recorded = report.get('grid', {})
+    if (recorded.get('crs') != expected['crs'] or recorded.get('width') != expected['width']
+            or recorded.get('height') != expected['height']
+            or recorded.get('transform') != list(expected['transform'])[:6]):
+        raise DownloadError('Recorded grid differs from the general case AOI')
+    return expected
 
 
 def validate_band_order(count, descriptions, tags=None):
@@ -22,22 +48,35 @@ def validate_band_order(count, descriptions, tags=None):
 def load_inputs(manifest_path):
     import rasterio
     manifest_path = Path(manifest_path).resolve()
-    report = json.loads(manifest_path.read_text())
-    if report.get('status') != 'complete' or report.get('case') != 'trishuli':
-        raise DownloadError('Baseline requires complete, verified Trishuli preprocessing')
+    report = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
+    if report.get('status') != 'complete':
+        raise DownloadError('Baseline requires complete, verified preprocessing')
+    general = report.get('case') != 'trishuli'
+    expected_grid = general_processing_grid(report, manifest_path.parent) if general else None
     arrays, hashes, grid = {}, {}, None
     keys = ['before_gamma0_db','after_gamma0_db','change_db','observability','quality_reasons',
             'pre_layover_shadow','post_layover_shadow']
     for key in keys:
         path = Path(report['outputs'][key])
+        if general:
+            if not path.resolve().is_relative_to(manifest_path.parent):
+                raise DownloadError('General raster input escapes its case folder: ' + key)
         digest = _sha256(path)
         if digest != report['output_sha256'][key]:
             raise DownloadError('Preprocessing output checksum changed: '+key)
         hashes[key] = {'path':str(path),'sha256':digest}
         with rasterio.open(path) as src:
+            if not src.crs:
+                raise DownloadError('Preprocessing raster is missing its CRS')
             actual = {'crs':src.crs.to_string(),'transform':src.transform,'width':src.width,'height':src.height}
-            if src.crs.to_epsg()!=32645 or src.res!=(20,20) or src.transform.b!=0 or src.transform.d!=0:
-                raise DownloadError('First baseline requires the north-up Trishuli UTM 45N 20 m grid')
+            if (not src.crs.is_projected or src.crs.linear_units != 'metre'
+                    or src.res!=(20,20) or src.transform.b!=0 or src.transform.d!=0
+                    or src.transform.a != 20 or src.transform.e != -20):
+                raise DownloadError('Baseline requires a north-up metric 20 m grid')
+            if general and actual != expected_grid:
+                raise DownloadError('Raster grid differs from the general case AOI')
+            if not general and src.crs.to_epsg()!=32645:
+                raise DownloadError('Legacy Trishuli baseline requires UTM 45N')
             if grid is not None and actual != grid:
                 raise DownloadError('Preprocessing grids differ')
             grid = actual
@@ -64,8 +103,10 @@ def load_inputs(manifest_path):
     dems = []
     for role in ['pre','post']:
         marker_path = manifest_path.parent/'intermediate'/role/'radiometry.verified.json'
-        marker = json.loads(marker_path.read_text())
+        marker = json.loads(marker_path.read_text(encoding='utf-8-sig'))
         dem_path = Path(marker['bands']['elevation'])
+        if general and not dem_path.resolve().is_relative_to(manifest_path.parent/'intermediate'/role):
+            raise DownloadError('General terrain cache escapes its case/role folder')
         digest = _sha256(dem_path)
         if marker.get('files',{}).get(str(dem_path)) != digest:
             raise DownloadError('SNAP terrain cache checksum changed')
@@ -133,8 +174,17 @@ def create_previews(folder,result,grid):
 def run_baseline(manifest='data/processed/trishuli/processing_manifest.json',
                  output='data/processed/trishuli/baseline',config=None):
     config = config or BaselineConfig(); config.validate()
+    manifest = Path(manifest).resolve()
+    preprocessing_identity = json.loads(manifest.read_text(encoding='utf-8-sig'))
+    source = manifest.parent
+    general = preprocessing_identity.get('case') != 'trishuli'
+    if general:
+        general_processing_grid(preprocessing_identity, source)
+        if str(output).replace('\\','/') == 'data/processed/trishuli/baseline':
+            output = source / 'baseline'
+        if Path(output).resolve() != source / 'baseline':
+            raise DownloadError('General baseline output must be in its own case/baseline folder')
     folder = Path(output).resolve(); folder.mkdir(parents=True,exist_ok=True)
-    source = Path(manifest).resolve().parent
     raw_folder = Path('data/raw').resolve()
     if folder==source or source.is_relative_to(folder) or folder.is_relative_to(raw_folder) or raw_folder.is_relative_to(folder):
         raise DownloadError('Baseline output must be separate from preprocessing outputs and raw data')
@@ -143,7 +193,9 @@ def run_baseline(manifest='data/processed/trishuli/processing_manifest.json',
         handle = lock.open('x')
     except FileExistsError:
         raise DownloadError('Baseline output is locked by another run; do not run concurrently') from None
-    report = {'status':'running','method':'deterministic_s1_change_v1','case':'trishuli',
+    report = {'status':'running','method':'deterministic_s1_change_v1','case':preprocessing_identity.get('case'),
+              'flood_date':preprocessing_identity.get('flood_date'),
+              'request_sha256':preprocessing_identity.get('request_sha256'),
               'started_at':now(),'config':asdict(config),'score_is_probability':False,
               'legend':{'0':'no candidate flood evidence; does not certify dry land',
                         '1':'candidate new open-water inundation','255':'unknown or unsupported'},
@@ -162,6 +214,7 @@ def run_baseline(manifest='data/processed/trishuli/processing_manifest.json',
         arrays,slope,grid,hashes,preprocessing = load_inputs(manifest)
         report['inputs'] = hashes
         report['pair'] = preprocessing.get('source_pair',preprocessing.get('pair',{}))
+        report['grid'] = {**{k:v for k,v in grid.items() if k!='transform'}, 'transform':list(grid['transform'])[:6]}
         result = detect_flood(arrays['before_gamma0_db'],arrays['after_gamma0_db'],arrays['change_db'],
                               arrays['observability'],slope,config=config)
         outputs = {}
@@ -183,6 +236,10 @@ def run_baseline(manifest='data/processed/trishuli/processing_manifest.json',
                       summary={k:result[k] for k in ['component_count','candidate_pixels','assessable_pixels','unknown_pixels']})
         report['summary']['candidate_area_m2'] = result['candidate_pixels']*400
         report['summary']['candidate_fraction_of_assessable'] = result['candidate_pixels']/max(1,result['assessable_pixels'])
+        aoi_pixels = int(np.count_nonzero(arrays['observability'] != 255))
+        report['summary']['aoi_pixels'] = aoi_pixels
+        report['summary']['unknown_aoi_pixels'] = int(np.count_nonzero((arrays['observability'] != 255) & (result['flood_mask'] == 255)))
+        report['summary']['assessable_fraction_of_aoi'] = result['assessable_pixels']/max(1,aoi_pixels)
         if result['assessable_pixels']==0:
             raise DownloadError('No terrain-supported observable pixels; refusing a successful flood assessment')
         # Persist a non-complete state until independent raster/vector checks pass.

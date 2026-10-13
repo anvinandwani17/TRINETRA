@@ -1,0 +1,11 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Terai discovery smoke test",
+    "note": "Small AOI for catalogue discovery; selected date is a software test, not a claim of a verified flood event."
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[[85.20,26.85],[85.25,26.85],[85.25,26.90],[85.20,26.90],[85.20,26.85]]]
+  }
+}

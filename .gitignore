@@ -75,3 +75,13 @@ data/raw/
 data/cache/
 data/runs/integrated/
 artifacts/
+/data/runs/
+/data/kuro_eval_*/
+/data/kuro_siwo/
+/payload/
+/dependencies.json
+/files.json
+/validation.json
+*.egg-info/
+/web/node_modules/
+/web/dist/
