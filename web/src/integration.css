@@ -7,3 +7,108 @@
 .input-mode{display:flex;gap:8px;margin-bottom:12px}.trinetra-body .input-mode button{margin:0;background:#1e293b}.trinetra-body .input-mode button[aria-pressed=true]{background:#0369a1;border-color:#38bdf8}
 
 .maplibregl-ctrl.maplibregl-ctrl-group{pointer-events:auto}.maplibregl-map.mode-draw_polygon .maplibregl-canvas{cursor:crosshair}
+
+/* TRINETRA submission polish */
+.trinetra-app {
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.trinetra-app header {
+  padding: 16px 26px;
+  background: linear-gradient(110deg, #101b30, #111827);
+  border-bottom: 1px solid #2b3e58;
+}
+.trinetra-app header h1 {
+  font-size: 25px;
+  letter-spacing: 1px;
+}
+.trinetra-app header p {
+  color: #b4c2d5;
+  opacity: 1;
+}
+.trinetra-body aside {
+  padding: 22px;
+  background: #101929;
+  scrollbar-width: thin;
+  scrollbar-color: #40536f #101929;
+}
+.trinetra-body h2 {
+  color: #f1f5f9;
+  letter-spacing: .2px;
+}
+.trinetra-body label {
+  color: #cbd5e1;
+  opacity: 1;
+}
+.trinetra-body aside button,
+.trinetra-body aside select,
+.trinetra-body aside input[type=date] {
+  min-height: 42px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  transition: background-color .15s, border-color .15s;
+}
+.trinetra-body aside select,
+.trinetra-body aside input[type=date] {
+  background: #0c1423;
+  border-color: #354760;
+  color-scheme: dark;
+}
+.trinetra-body aside button {
+  background: #075985;
+  border-color: #1682af;
+  font-weight: 600;
+}
+.trinetra-body aside button:hover:not(:disabled) {
+  background: #036b99;
+  border-color: #7dd3fc;
+}
+.trinetra-body aside :is(button,select,input,a):focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 3px;
+}
+.trinetra-body .input-mode {
+  padding: 4px;
+  border: 1px solid #30415b;
+  border-radius: 12px;
+  background: #0b1322;
+}
+.trinetra-body .input-mode button {
+  background: transparent;
+  border-color: transparent;
+}
+.trinetra-body .input-mode button[aria-pressed=true] {
+  background: #075985;
+  border-color: #38bdf8;
+}
+.trinetra-body .notice {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #1d2636;
+  color: #e2e8f0;
+  line-height: 1.6;
+}
+.trinetra-body .exports a {
+  padding: 10px 12px;
+  border: 1px solid #354760;
+  border-radius: 8px;
+  text-decoration: none;
+  background: #142238;
+}
+.trinetra-body .exports a:hover {
+  border-color: #7dd3fc;
+}
+.trinetra-body .layer-choice {
+  padding: 5px 0;
+  line-height: 1.4;
+}
+.trinetra-body input[type=checkbox] {
+  accent-color: #38bdf8;
+}
+.trinetra-body .satellite-preview img {
+  border-radius: 8px;
+}
+.trinetra-app .status-badge {
+  border-radius: 20px;
+}
