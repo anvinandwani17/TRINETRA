@@ -98,7 +98,7 @@ async def run_pipeline_job(job_id, allow_downloads=False, transport='s3', max_pr
                     allow_downloads=allow_downloads, transport=transport, max_product_gib=max_product_gib,
                     progress=lambda stage,message,details: set_stage(job, stage, message, details))
                 job['pipeline_trace'] = output['trace']
-                if job['config']=='experimental_ai':
+                if job['config'] in {'experimental_ai','experimental_ai_hand'}:
                     from trinetra.core.general_ai import ensure_ai
                     ai_output=await asyncio.to_thread(ensure_ai,job['aoi'],job['flood_date'],data_root(),
                         progress=lambda stage,message,details:set_stage(job,stage,message,details))
@@ -160,8 +160,10 @@ async def run_job(job_id, satellite=None):
                      'Connectivity uses mapped nodes and a 500 m endpoint snapping limit; missing topology and routes beyond the AOI can change access results',
                      'Candidate-intersecting roads are removed only in a conditional scenario; field verification is required',
                      'Landing zones, Sentinel-2 availability and calibrated closure probabilities have not been assessed']
-        if satellite['summary']['method'] == 'experimental_ai':
+        if satellite['summary']['method'].startswith('experimental_ai'):
             warnings.append('Experimental pilot model: flood accuracy is not validated for the requested area; scores are not calibrated')
+        if satellite['provenance'].get('terrain_screen'):
+            warnings.append('Experimental HAND variant: provisional 1 km2 drainage initiation and 10 m height ceiling; rejected terrain stays unknown. Candidate reduction is not validated accuracy.')
         provenance = {**satellite['provenance'], 'osm': osm, 'osm_snapshot': osm['snapshot_requested'],
                       'satellite_cache_hit':job['cache_hit'],
                       'cache_hit': any(value.get('cache_hit', False) for value in osm['layers'].values()),

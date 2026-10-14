@@ -50,3 +50,7 @@ Read [methodology](docs/methodology.md), [source attribution](docs/ATTRIBUTION.m
 Reports now render headings and tables for browser printing. ZIP exports include a standalone HTML report, attribution and export semantics. The AI preview is selected by method; an unavailable preview is omitted rather than replaced by baseline imagery.
 
 Project code licensing is not yet declared. Source attribution and third-party data terms do not grant a license to this project's code. Do not represent the release as complete until assets are published, hash-checked and accessible to another machine.
+
+## Experimental terrain review
+
+Optional baseline/AI HAND variants preserve the existing methods and outputs. Provisional thresholds strongly reduce coverage; candidate reduction is not validated accuracy. See [terrain review](docs/terrain_hand.md) for cached-input commands, assumptions and measured tradeoffs.
