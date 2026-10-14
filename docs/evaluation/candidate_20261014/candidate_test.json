@@ -1,0 +1,145 @@
+{
+  "split": "test",
+  "samples": 13,
+  "events": [
+    "1111007",
+    "1111013",
+    "205",
+    "277",
+    "321",
+    "562"
+  ],
+  "checkpoint": "C:\\Users\\Arun Kumar\\OneDrive\\Desktop\\TRINETRA_Comparison_20261014-225820\\candidate\\best.pt",
+  "threshold": 0.5,
+  "threshold_tuned": false,
+  "excluded": [
+    "Trishuli",
+    "EMSR927"
+  ],
+  "metrics": {
+    "loss": 1.170413851737976,
+    "iou": 0.2505163406633459,
+    "dice_f1": 0.4006606431555426,
+    "precision": 0.29292546642674494,
+    "recall": 0.6337465423624629,
+    "tp": 6186,
+    "fp": 14932,
+    "fn": 3575,
+    "tn": 617552,
+    "per_event": {
+      "1111013": {
+        "iou": 0.05730782488796966,
+        "dice_f1": 0.10840329285190317,
+        "precision": 0.05744644091223221,
+        "recall": 0.9595959595959596,
+        "tp": 665,
+        "fp": 10911,
+        "fn": 28,
+        "tn": 179057
+      },
+      "1111007": {
+        "iou": 0.5024403979725924,
+        "dice_f1": 0.6688323858311989,
+        "precision": 0.6995556717198118,
+        "recall": 0.6406941950927588,
+        "tp": 5353,
+        "fp": 2299,
+        "fn": 3002,
+        "tn": 190050
+      },
+      "277": {
+        "iou": 0.0,
+        "dice_f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0,
+        "fp": 1171,
+        "fn": 0,
+        "tn": 99181
+      },
+      "321": {
+        "iou": 0.0,
+        "dice_f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0,
+        "fp": 192,
+        "fn": 0,
+        "tn": 49984
+      },
+      "205": {
+        "iou": 0.18421052631578946,
+        "dice_f1": 0.3111111111111111,
+        "precision": 0.45776566757493187,
+        "recall": 0.23562412342215988,
+        "tp": 168,
+        "fp": 199,
+        "fn": 545,
+        "tn": 49264
+      },
+      "562": {
+        "iou": 0.0,
+        "dice_f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0,
+        "fp": 160,
+        "fn": 0,
+        "tn": 50016
+      }
+    },
+    "macro_event": {
+      "iou": 0.12399312486272525,
+      "dice_f1": 0.18139113163236886,
+      "precision": 0.20246129670116264,
+      "recall": 0.3059857130184797
+    },
+    "threshold": 0.5,
+    "empty_positive_denominator_policy": "zero; inspect TP/FP/FN counts"
+  },
+  "checkpoint_sha256": "3c53d37694310e4e73d0c1aa5e5f49d48382aa485247946bce54a9ed8f4a67f3",
+  "checkpoint_mode": "fit",
+  "evaluated_local_manifest_sha256": "2930387a87f1cf2648c3a46a891eea49e10eca43d1eb6577ae8258ce1806dbc8",
+  "split_sha256": {
+    "train": "3cbd3f67a1dfb90e847c934c3bccca45fda797bf4c6a6f4e0f1bda3c79d07c19",
+    "validation": "00976a4eb045f321a70321544189cf65a1c9a4a6947307cf957df373c34aa862",
+    "test": "aafeed89b11b50b5ed2297e0736e9032dc448d816498ce2629b5adeb497e691b"
+  },
+  "official_events": [
+    "1111002",
+    "1111007",
+    "1111013",
+    "205",
+    "277",
+    "321",
+    "411",
+    "445",
+    "561",
+    "562"
+  ],
+  "missing_events": [
+    "1111002",
+    "411",
+    "445",
+    "561"
+  ],
+  "official_samples": 15896,
+  "sample_coverage_fraction": 0.0008178158027176649,
+  "full_split_evaluated": false,
+  "checkpoint_selection_events": [
+    "1111003",
+    "1111008",
+    "279",
+    "437",
+    "520",
+    "559"
+  ],
+  "training_performed": false,
+  "probability_calibrated": false,
+  "limitations": [
+    "Metrics cover only the locally cached samples listed here",
+    "Validation events selected the checkpoint; validation is not an independent test",
+    "Kuro Siwo metrics do not validate Trishuli or Himalayan domain compatibility",
+    "Pilot training coverage remains partial; evaluation does not retrain the model"
+  ]
+}
