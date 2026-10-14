@@ -4,9 +4,9 @@ from urllib.request import Request, urlopen
 import hashlib
 import io
 import json
-import random
 import re
 import tarfile
+import tempfile
 from trinetra.datasets.kuro_siwo import FIELDS, REPO, verify_splits, ingest_prefix
 from trinetra.core.files import atomic_json
 
@@ -83,24 +83,43 @@ def fetch_training(root, train_quota=16, val_quota=8, max_mib=1024, probes=4096,
     if not shards: raise ValueError('No official labeled GRD train shards')
     quotas = {e: train_quota if s == 'train' else val_quota
               for e, s in report['assignments'].items() if s in ['train', 'validation']}
+    manifest = root/'samples/local_manifest.json'
+    original = json.loads(manifest.read_text())['samples']
+    protected = [r for r in original if r['split'] not in ['train', 'validation']]
     def counts():
         rows = json.loads((root/'samples/local_manifest.json').read_text())['samples']
         return {e: sum(r['event_id'] == e for r in rows) for e in quotas}
     current = counts(); budget = RangeBudget(root/'cache/training_ranges', max_mib*1024**2)
-    rng = random.Random(seed); visited = set(); errors = []; catalog = {}
+    signature = {'revision': revision, 'split_sha256': report['split_sha256'],
+                 'seed': seed, 'shards': shards, 'schedule': 'sha256-probes-v1'}
+    # JSON turns tuples into lists; compare the canonical serialized structure.
+    signature = json.loads(json.dumps(signature))
+    state_path = root/'reports/training_fetch_cursor_v2.json'
+    state = json.loads(state_path.read_text()) if state_path.exists() else {
+        'signature': signature, 'next_probe': 0, 'rejected': []}
+    if state['signature'] != signature:
+        raise ValueError('Training fetch cursor belongs to another source/partition/seed')
+    rejected = {(r['shard'], r['byte_offset']) for r in state['rejected']}
+    visited = set(); errors = []; catalog = {}
     for split in ['train', 'validation']:
         for line in (root/'splits'/(split+'.jsonl')).read_text().splitlines():
             row = json.loads(line); catalog[(row['event_id'], row['grid_id'])] = row
+    lock = root/'samples/.heldout_fetch.lock'
+    with lock.open('x') as stream:
+        stream.write(str(__import__('os').getpid()))
     try:
-        for probe in range(probes):
+        first_probe = state['next_probe']
+        for step in range(probes):
             if all(current[e] >= quotas[e] for e in quotas): break
+            probe = first_probe + step
             shard, total = shards[probe % len(shards)]
             url = f'https://huggingface.co/datasets/{REPO}/resolve/{revision}/{shard}'
-            start = rng.randrange(max(1, (total-65536)//512))*512
+            positions = max(1, (total-65536)//512)
+            start = int.from_bytes(hashlib.sha256(f'{seed}:{probe}'.encode()).digest()[:8], 'big') % positions * 512
             window = budget.get(url, start, 65536)
             for key, sample_start in candidates(window, start):
                 identity = (shard, sample_start)
-                if identity in visited: continue
+                if identity in visited or identity in rejected: continue
                 visited.add(identity)
                 info_bytes = budget.get(url, sample_start+INFO_OFFSET, 8704)
                 info, size = sample_extent(key, sample_start, info_bytes)
@@ -117,17 +136,42 @@ def fetch_training(root, train_quota=16, val_quota=8, max_mib=1024, probes=4096,
                     raise ValueError('Unexpected selected sample field order')
                 if any(m.size != 200832 for m in members if m.name.endswith('.npy')):
                     raise ValueError('Unexpected selected sample array size')
-                path = root/'cache/selected_sample.tar.part'; path.write_bytes(raw)
-                ingest_prefix(root, path, {'repo': REPO, 'revision': revision, 'shard': shard,
-                                        'byte_offset': sample_start, 'received_sample_bytes': size}, limit=1)
-                path.unlink(missing_ok=True); current = counts()
+                with tempfile.NamedTemporaryFile(dir=root/'cache', suffix='.tar.part', delete=False) as stream:
+                    stream.write(raw); path = Path(stream.name)
+                try:
+                    ingest_prefix(root, path, {'repo': REPO, 'revision': revision, 'shard': shard,
+                                            'byte_offset': sample_start, 'received_sample_bytes': size}, limit=1)
+                except ValueError as exc:
+                    # Reject known label inconsistencies, never relax the sample validator.
+                    if str(exc) not in {'Invalid label is marked valid', 'Unexpected label/validity codes'}:
+                        raise
+                    rejected.add(identity)
+                    state['rejected'].append({'shard': shard, 'byte_offset': sample_start,
+                                              'event_id': event, 'grid_id': grid, 'reason': str(exc)})
+                    atomic_json(state_path, state)
+                    print(f'Rejected invalid sample: event {event}, grid {grid}: {exc}', flush=True)
+                    continue
+                finally:
+                    path.unlink(missing_ok=True)
+                current = counts()
                 print(f'Cached event {event}: {current[event]}/{quotas[event]} ({report["assignments"][event]})', flush=True)
+            state['next_probe'] = probe + 1
+            atomic_json(state_path, state)
+            if step % 20 == 0:
+                print(f'Probe {step+1}/{probes}; received {budget.received/1024**2:.2f} MiB; rejected {len(rejected)}', flush=True)
     except (ValueError, OSError) as exc: errors.append(str(exc))
+    finally:
+        lock.unlink(missing_ok=True)
+    after = json.loads(manifest.read_text())['samples']
+    if [r for r in after if r['split'] not in ['train', 'validation']] != protected:
+        raise ValueError('Protected test sample manifest changed unexpectedly')
+    current = counts()
     result = {'events': {e: {'split': report['assignments'][e], 'samples': current[e], 'target': quotas[e]} for e in quotas},
               'all_event_quotas_met': all(current[e] >= quotas[e] for e in quotas),
               'network_bytes_this_run': budget.received, 'network_budget_bytes': budget.max_bytes,
-              'test_downloaded': False, 'errors': errors,
-              'note': 'Subset counts only; not a download of the full metadata-indexed release.'}
+              'test_downloaded': False, 'errors': errors, 'next_probe': state['next_probe'],
+              'rejected_records': len(rejected), 'selection_bias': 'Bounded archive probes with invalid-label rejection; not representative full-event coverage',
+              'note': 'Subset counts only; not a download of the full metadata-indexed release. Invalid samples are not accepted into the local manifest.'}
     atomic_json(root/'reports/training_download.json', result)
     if not result['all_event_quotas_met']:
         raise ValueError('Bounded fetch incomplete; see reports/training_download.json. No proper training started.')
