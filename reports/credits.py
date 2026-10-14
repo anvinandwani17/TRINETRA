@@ -8,5 +8,5 @@ ATTRIBUTIONS = """# Sources and attribution
 - AI training dataset: Kuro Siwo, Bountos et al. (2024), via https://huggingface.co/datasets/orion-ai-lab/Kuro-Siwo-Webdataset. The checkpoint's actual subset and event split must be disclosed. Dataset use remains subject to its source terms.
 - Reference context, when separately provided: Copernicus Emergency Management Service, EMSR927 (https://mapping.emergency.copernicus.eu/activations/EMSR927/). The supplied Bidur labels are mass movement/landslide context, not flood-water ground truth or training labels. The current export does not calculate corridor agreement.
 
-Third-party data terms are separate from project code licensing. No project code license is selected by this attribution file. Release publishers must choose and declare the project's code license and check the original asset redistribution terms.
+TRINETRA project code is licensed under MIT; see the repository LICENSE. Third-party satellite/OSM data, datasets, model assets and dependencies remain subject to their own terms. The code license does not authorize redistribution of those assets.
 """

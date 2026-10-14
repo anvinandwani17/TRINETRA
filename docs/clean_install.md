@@ -78,8 +78,6 @@ Use network.verified_osm, network.observed_access and reports.grounded via the
 active integrated API. The older graph/isolation/normalization helpers and
 report schema remain as legacy utilities; they are not active pipeline results.
 
-No project code license was found in the uploaded tracked-file subset. A license
-choice remains required; data attribution does not license project code or
-automatically authorize model/data redistribution. Broader flood validation,
+TRINETRA project code is licensed under MIT; see the repository LICENSE. Third-party satellite/OSM data, datasets, model assets and dependencies remain subject to their own terms. The code license does not authorize redistribution of those assets. Broader flood validation,
 HAND coverage/accuracy, Sentinel-2, debris and corridor/routing extensions
 remain pending. Do not describe retired prototypes as completed capabilities.

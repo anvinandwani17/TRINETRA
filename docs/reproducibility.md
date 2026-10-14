@@ -36,7 +36,7 @@ Validate the release URL and trusted manifest identity independently: hashes ver
 
 ## Remaining submission tasks
 
-- Select and declare a project code license with the team; attribution is not a code license.
+- Project code uses MIT (see LICENSE). Verify third-party asset redistribution terms separately.
 - Publish the assets and verify external access.
 - Record fresh uncached SNAP completion and stage timings for supported cases.
 - Include real evaluation outputs with their actual coverage, not a generalized pilot score.

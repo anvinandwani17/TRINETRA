@@ -49,7 +49,7 @@ Read [methodology](docs/methodology.md), [evaluation status](docs/evaluation_sta
 
 Reports now render headings and tables for browser printing. ZIP exports include a standalone HTML report, attribution and export semantics. The AI preview is selected by method; an unavailable preview is omitted rather than replaced by baseline imagery.
 
-Project code licensing is not yet declared. Source attribution and third-party data terms do not grant a license to this project's code. Do not represent the release as complete until assets are published, hash-checked and accessible to another machine.
+TRINETRA project code is licensed under MIT; see the repository LICENSE. Third-party satellite/OSM data, datasets, model assets and dependencies remain subject to their own terms. The code license does not authorize redistribution of those assets. Public release-asset delivery remains unverified; local hash-checked asset restoration was verified separately.
 
 ## Experimental terrain review
 

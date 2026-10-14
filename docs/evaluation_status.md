@@ -66,10 +66,14 @@ Other root assets and third-party redistribution terms are not certified here.
 
 ## Remaining work, in order
 
-1. Verify the retirement/setup patch on the laptop and commit it.
-2. Test a clean checkout startup with actual dependency/config files and assets;
-   public release-asset delivery is still unresolved and currently paused.
-3. Select a project code license and verify third-party asset redistribution terms.
+1. Commit the MIT license and matching documentation updates.
+2. Fresh Windows setup passed 28 selected offline tests and the frontend build.
+   Local bundle hashes/restoration and actual backend startup passed. Job
+   b4fe3df7fdbb reproduced the earlier AI raster hashes and 27,809 AOI-clipped
+   candidates. Its blank OSM key caused infrastructure to remain unavailable.
+   Live infrastructure reproduction and public release-asset delivery remain
+   unresolved; public uploads are currently paused.
+3. MIT is selected for project code (LICENSE); verify third-party asset redistribution terms.
 4. Expand independent flood-label coverage with fixed thresholds and per-event
    metrics; compare baseline, AI and HAND on the same labelled pixels while
    reporting abstention/coverage. No such accuracy comparison is complete yet.
