@@ -57,4 +57,4 @@ Optional baseline/AI HAND variants preserve the existing methods and outputs. Pr
 
 ## Retired prototype entry points
 
-`api/jobs.py` and `scripts/run_case.py` now stop with a migration error. Their old geometric hazard/shadow fallbacks and unverified cache path cannot produce results. Use `api.main:app` or `scripts/run_integrated_case.py`; the latter accepts all four saved-case methods. Existing prototype cache files are preserved but must not be treated as verified evidence. Root-level `network/` and `reports/` legacy modules require a separate audit; this cleanup covers the uploaded source subset.
+`api/jobs.py` and `scripts/run_case.py` stop with migration errors. The legacy OSM helper, uncalibrated Monte Carlo/landing-zone prototypes and default-filled report generator are also retired. Use `api.main:app` or `scripts/run_integrated_case.py`; the latter accepts all four saved-case methods. Existing prototype cache files are preserved but must not be treated as verified evidence. See [clean-checkout verification](docs/clean_install.md) for the updated Windows setup and remaining acceptance checks.

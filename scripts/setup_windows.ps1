@@ -1,18 +1,16 @@
-# Run from PowerShell: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
-# Uses the project's interpreter directly; activation and administrator rights are unnecessary.
+# From a clean checkout: powershell -NoProfile -File .\scripts\setup_windows.ps1
+# Optional frozen-model runtime: add -IncludeAI. No admin rights or activation needed.
 [CmdletBinding()]
-param()
+param([switch]$IncludeAI)
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 function Invoke-Checked {
     param([string]$Command, [string[]]$ArgumentList)
     & $Command @ArgumentList
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed (exit $LASTEXITCODE): $Command. Setup stopped; no success claimed."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "Command failed (exit $LASTEXITCODE): $Command" }
 }
 
 Push-Location $ProjectRoot
@@ -20,42 +18,37 @@ try {
     $Launcher = (Get-Command py.exe -ErrorAction Stop).Source
     $Node = (Get-Command node.exe -ErrorAction Stop).Source
     $Npm = (Get-Command npm.cmd -ErrorAction Stop).Source
-    Invoke-Checked -Command $Launcher -ArgumentList @("-3.12", "-c", "import sys,struct; assert sys.version_info[:2] == (3,12); assert struct.calcsize('P') == 8; print('Python 3.12 x64:', sys.executable)")
-    Invoke-Checked -Command $Node -ArgumentList @("-e", "const [a,b]=process.versions.node.split('.').map(Number); if(a<22 || (a===22 && b<12)) { console.error('Install Node.js 22.12+ x64 with npm'); process.exit(1); } console.log('Node:',process.version)")
+    Invoke-Checked $Launcher @('-3.12', '-c', "import sys,struct; assert sys.version_info[:2] == (3,12); assert struct.calcsize('P') == 8")
+    Invoke-Checked $Node @('-e', "const [a,b]=process.versions.node.split('.').map(Number); if(a<22 || (a===22 && b<12)) { console.error('Setup requires Node.js 22.12+'); process.exit(1); }")
 
-    $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+    $VenvPython = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
     if (-not (Test-Path $VenvPython)) {
-        Invoke-Checked -Command $Launcher -ArgumentList @("-3.12", "-m", "venv", ".venv")
+        Invoke-Checked $Launcher @('-3.12', '-m', 'venv', '.venv')
     }
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-c", "import sys,struct; assert sys.version_info[:2] == (3,12), 'Existing .venv uses a different Python; rename it and rerun'; assert struct.calcsize('P') == 8")
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
-    # Local package is editable; all index-resolved dependencies must be wheels.
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-m", "pip", "install", "--only-binary=:all:", "-r", "requirements-anvi.txt")
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-m", "pip", "install", "-r", "requirements-ml-cpu.txt")
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-m", "pip", "check")
+    Invoke-Checked $VenvPython @('-c', "import sys,struct; assert sys.version_info[:2] == (3,12), 'Existing .venv uses a different Python'; assert struct.calcsize('P') == 8")
+    Invoke-Checked $VenvPython @('-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel')
+    Invoke-Checked $VenvPython @('-m', 'pip', 'install', '-r', 'requirements-integration.txt')
+    if ($IncludeAI) {
+        Invoke-Checked $VenvPython @('-m', 'pip', 'install', 'torch>=2.6,<3', '--index-url', 'https://download.pytorch.org/whl/cpu')
+    }
+    Invoke-Checked $VenvPython @('-m', 'pip', 'check')
+    if (-not (Test-Path '.env')) {
+        Copy-Item 'configs/integration.env.example' '.env'
+    }
 
-    if (-not (Test-Path ".env")) {
-        Copy-Item ".env.example" ".env"
-    }
-    Push-Location (Join-Path $ProjectRoot "web")
+    Push-Location (Join-Path $ProjectRoot 'web')
     try {
-        if (Test-Path "package-lock.json") {
-            Invoke-Checked -Command $Npm -ArgumentList @("ci", "--no-audit", "--no-fund")
-        } else {
-            Invoke-Checked -Command $Npm -ArgumentList @("install", "--no-audit", "--no-fund")
-        }
-    } finally {
-        Pop-Location
-    }
+        Invoke-Checked $Npm @('ci', '--no-audit', '--no-fund')
+        Invoke-Checked $Npm @('run', 'build')
+    } finally { Pop-Location }
 
-    Invoke-Checked -Command $VenvPython -ArgumentList @("-m", "pytest")
-    Invoke-Checked -Command $VenvPython -ArgumentList @("scripts\smoke_env.py", "--report", "artifacts\reports\environment-smoke.json")
-    # Save resolved package versions for debugging; not a cross-platform lockfile.
+    $CheckArgs = @('scripts/check_clean_install.py', '--report', 'artifacts/reports/clean-install.json')
+    if ($IncludeAI) { $CheckArgs += '--require-ai' }
+    Invoke-Checked $VenvPython $CheckArgs
+    Invoke-Checked $VenvPython @('-m', 'pytest', 'tests/test_api.py', 'tests/test_legacy_retirement.py', 'tests/test_remaining_retirement.py', 'tests/test_submission_reports.py', 'tests/test_general_jobs.py', '-q', '--tb=short')
     $Freeze = & $VenvPython -m pip freeze
-    if ($LASTEXITCODE -ne 0) { throw "Could not record Python package versions." }
-    $Freeze | Set-Content -Encoding UTF8 "artifacts\reports\python-packages.txt"
-    Write-Host "TRINETRA environment smoke tests passed on this computer."
-    Write-Host "No datasets downloaded, no training, and no satellite pipeline started."
-} finally {
-    Pop-Location
-}
+    if ($LASTEXITCODE -ne 0) { throw 'Could not record installed package versions.' }
+    $Freeze | Set-Content -Encoding UTF8 'artifacts/reports/python-packages.txt'
+    Write-Host 'Integrated API startup, selected offline tests and frontend build passed.'
+    Write-Host 'Saved assets, actual Windows server startup, SNAP processing and model accuracy need separate verification.'
+} finally { Pop-Location }

@@ -57,13 +57,16 @@ The uploaded source audit found fabricated geometric fallbacks in the unused
 `api/jobs.py` and `scripts/run_case.py` prototypes. Both are retired and now fail
 before analysis or cache reuse. The active API already uses `api.integrated_jobs`.
 Old cached outputs are preserved and are not migrated into verified results.
-The uploaded archive omitted root `network/`, `reports/`, configs, requirements
-and other root assets. Their remaining legacy code and install dependencies are
-not certified by this cleanup.
+The follow-up archive supplied root network/report modules and integration
+requirements/configs. The old network.ohsome synthesizer, uncalibrated Monte
+Carlo and landing-zone modules, and reports.generator are now retired with
+explicit errors. Active verified_osm/observed_access/grounded code is retained.
+The Windows setup now targets integration requirements and active API health.
+Other root assets and third-party redistribution terms are not certified here.
 
 ## Remaining work, in order
 
-1. Audit root network/report modules and remaining CLI/report entry points.
+1. Verify the retirement/setup patch on the laptop and commit it.
 2. Test a clean checkout startup with actual dependency/config files and assets;
    public release-asset delivery is still unresolved and currently paused.
 3. Select a project code license and verify third-party asset redistribution terms.
