@@ -4,7 +4,7 @@ Sentinel-1 flood evidence, terrain observability, mapped infrastructure and cond
 
 Anvi owns the satellite/flood-AI Python package in `src/trinetra`. Arnav owns the React/API/infrastructure side in `web`, `api`, `network` and `reports`. The active integrated API is **`api.main:app`**.
 
-The baseline supports saved cases and a general local AOI/date pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic detection → historical OSM → conditional access → report. AOIs are bounded to 300 km² and must have a suitable same-orbit Sentinel-1 pair. Downloads are disabled by default and must be enabled for missing scene data. The saved **Trishuli / 26 August 2026** baseline and experimental AI demo remain available. General-case experimental AI is implemented in the new pipeline; fresh laptop validation is required. See docs/general_ai.md.
+The baseline supports saved cases and a general local AOI/date pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic detection → historical OSM → conditional access → report. AOIs are bounded to 300 km² and must have a suitable same-orbit Sentinel-1 pair. Downloads are disabled by default and must be enabled for missing scene data. The saved **Trishuli / 26 August 2026** baseline and experimental AI demo remain available. General-case experimental AI execution and export were verified on one custom polygon on the laptop; broader place/date coverage and accuracy remain unvalidated. See docs/general_ai.md.
 
 ## Run locally on Windows
 
@@ -26,7 +26,7 @@ npm run build
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Open http://127.0.0.1:5173, select a saved case and click **Load selected saved area**, or draw a local Polygon and choose a historical UTC day. Keep baseline selected for general cases. Existing case files are not included in Git. Cached satellite results are hash-verified and reused; missing scenes require the explicit download option. The pipeline never trains a model. Run stages, actual elapsed times, source availability, preview links and report/export results are displayed.
+Open http://127.0.0.1:5173, select a saved case and click **Load selected saved area**, or draw a local Polygon and choose a historical UTC day. Baseline is the conservative default; experimental AI requires the frozen checkpoint and run config. HAND variants are optional and sharply restrict assessable coverage. Existing case files are not included in Git. Cached satellite results are hash-verified and reused; missing scenes require the explicit download option. The pipeline never trains a model. Run stages, actual elapsed times, source availability, preview links and report/export results are displayed.
 
 ## Credentials
 
@@ -45,7 +45,7 @@ See [docs/integration.md](docs/integration.md) for the data contract, exact setu
 
 ## Evidence and reproducibility
 
-Read [methodology](docs/methodology.md), [source attribution](docs/ATTRIBUTION.md) and [reproducibility setup](docs/reproducibility.md). The supplied AI pilot used 104 training samples from 15 events and 2 validation samples from 2 events; no generalization result is claimed. Frozen pilot evaluation reports the exact locally cached coverage. HAND/debris/S2 remain pending. General-case AI execution is experimental and requires separate Sigma0 preprocessing.
+Read [methodology](docs/methodology.md), [evaluation status](docs/evaluation_status.md), [source attribution](docs/ATTRIBUTION.md) and [reproducibility setup](docs/reproducibility.md). The supplied AI pilot used 104 training samples from 15 events and 2 validation samples from 2 events. A separate four-patch/two-event test subset scored IoU 0.3194 and precision approximately 0.384; this tiny subset does not establish broad generalization. Optional HAND integration is verified, while its accuracy, debris detection and Sentinel-2 confirmation remain unvalidated or unimplemented. General-case AI requires separate Sigma0 preprocessing.
 
 Reports now render headings and tables for browser printing. ZIP exports include a standalone HTML report, attribution and export semantics. The AI preview is selected by method; an unavailable preview is omitted rather than replaced by baseline imagery.
 
@@ -54,3 +54,7 @@ Project code licensing is not yet declared. Source attribution and third-party d
 ## Experimental terrain review
 
 Optional baseline/AI HAND variants preserve the existing methods and outputs. Provisional thresholds strongly reduce coverage; candidate reduction is not validated accuracy. See [terrain review](docs/terrain_hand.md) for cached-input commands, assumptions and measured tradeoffs.
+
+## Retired prototype entry points
+
+`api/jobs.py` and `scripts/run_case.py` now stop with a migration error. Their old geometric hazard/shadow fallbacks and unverified cache path cannot produce results. Use `api.main:app` or `scripts/run_integrated_case.py`; the latter accepts all four saved-case methods. Existing prototype cache files are preserved but must not be treated as verified evidence. Root-level `network/` and `reports/` legacy modules require a separate audit; this cleanup covers the uploaded source subset.
