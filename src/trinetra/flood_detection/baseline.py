@@ -66,7 +66,7 @@ def terrain_slope(dem, resolution=20):
     return slope
 
 
-def detect_flood(before, after, change, observability, slope, *, config=None, resolution=20):
+def detect_flood(before, after, change, observability, slope, *, config=None, resolution=20, terrain_allowed=None):
     config = config or BaselineConfig()
     config.validate()
     if resolution != 20:
@@ -83,8 +83,32 @@ def detect_flood(before, after, change, observability, slope, *, config=None, re
     pre,support1 = intensity_mean_db(before,valid,config.min_filter_neighbors)
     post,support2 = intensity_mean_db(after,valid,config.min_filter_neighbors)
     supported = support1 & support2
+    return _classify(pre,post,supported,valid,slope,config,resolution,terrain_allowed)
+
+
+def detect_filtered_flood(pre,post,observability,slope,*,config=None,resolution=20,terrain_allowed=None):
+    """Reuse checksum-verified 3x3 filtered inputs; never filter a second time."""
+    config=config or BaselineConfig();config.validate()
+    pre=np.asarray(pre);post=np.asarray(post)
+    if resolution!=20 or pre.shape!=post.shape or pre.ndim!=3 or pre.shape[0]!=2:
+        raise ValueError('Filtered baseline requires matching VV/VH 20 m inputs')
+    if observability.shape!=pre.shape[1:] or slope.shape!=pre.shape[1:] or not np.isin(observability,[0,1,255]).all():
+        raise ValueError('Filtered baseline grids or observability differ')
+    valid=(observability==1)&np.all(np.isfinite(pre)&np.isfinite(post),axis=0)
+    return _classify(pre,post,valid,valid,slope,config,resolution,terrain_allowed)
+
+
+def _classify(pre,post,supported,valid,slope,config,resolution,terrain_allowed):
+    shape=slope.shape
     terrain_known = np.isfinite(slope) & (slope>=0) & (slope<=90)
-    eligible = valid & supported & terrain_known & (slope <= config.max_slope_deg)
+    if terrain_allowed is None:
+        terrain_supported = terrain_known & (slope <= config.max_slope_deg)
+    else:
+        terrain_allowed = np.asarray(terrain_allowed)
+        if terrain_allowed.shape != shape or terrain_allowed.dtype != bool:
+            raise ValueError('Experimental terrain eligibility must be an aligned boolean grid')
+        terrain_supported = terrain_known & terrain_allowed
+    eligible = valid & supported & terrain_supported
     drop = pre-post
     pre_low = (pre[0]<=config.pre_low_vv_db) & (pre[1]<=config.pre_low_vh_db)
     vv = drop[0]>=config.vv_drop_db
@@ -103,7 +127,7 @@ def detect_flood(before, after, change, observability, slope, *, config=None, re
     reasons = np.zeros(shape,dtype=np.uint16)
     reasons[~valid] |= 1
     reasons[~terrain_known] |= 2
-    reasons[terrain_known & (slope>config.max_slope_deg)] |= 4
+    reasons[terrain_known & ~terrain_supported] |= 4
     reasons[valid & ~supported] |= 8
     for flag,failed in [(16,pre_low),(32,~vv),(64,~vh),(128,~dark),(256,seeds&~candidate)]:
         reasons[eligible & failed] |= flag
@@ -111,7 +135,7 @@ def detect_flood(before, after, change, observability, slope, *, config=None, re
     margins = [drop[0]-config.vv_drop_db,drop[1]-config.vh_drop_db,
                config.post_vv_max_db-post[0],config.post_vh_max_db-post[1]]
     strength = np.minimum.reduce([np.clip(.5+m/6,0,1) for m in margins])
-    terrain_strength = np.clip(1-slope/(2*config.max_slope_deg),0,1)
+    terrain_strength = np.clip(1-slope/(2*config.max_slope_deg),0,1) if terrain_allowed is None else np.ones(shape)
     score = np.full(shape,np.nan,dtype=np.float32)
     score[eligible] = (strength*terrain_strength)[eligible]
     score[eligible & (pre_low | (seeds&~candidate))] = 0

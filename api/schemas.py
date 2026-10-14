@@ -38,7 +38,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class PipelineRequest(AnalyzeRequest):
-    config: Literal['baseline', 'experimental_ai'] = 'baseline'
+    config: Literal['baseline', 'experimental_ai', 'baseline_hand', 'experimental_ai_hand'] = 'baseline'
     allow_downloads: bool = Field(default=False, strict=True)
     transport: Literal['s3', 'odata'] = 's3'
     max_product_gib: float = Field(default=3.0, gt=0, le=3.0, allow_inf_nan=False)

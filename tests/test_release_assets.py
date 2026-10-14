@@ -37,6 +37,35 @@ def test_verified_asset_fetch_and_same_hash_reuse(tmp_path, monkeypatch):
     assert target.stat().st_mtime_ns == before
 
 
+def test_local_bundle_uses_same_hash_checks_without_network(tmp_path, monkeypatch):
+    manifest, data, _, repo = bundle(tmp_path)
+    local = tmp_path/'assets.zip'; local.write_bytes(data)
+    monkeypatch.setattr(assets.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('Local restore must not request network'))
+    assets.fetch(manifest, None, repo, bundle_file=local)
+    target = repo/'data/processed/trishuli/example.bin'
+    before = target.stat().st_mtime_ns
+    assets.fetch(manifest, None, repo, bundle_file=local)
+    assert target.read_bytes() == b'fixture bytes' and target.stat().st_mtime_ns == before
+
+
+def test_corrupt_local_bundle_changes_nothing(tmp_path):
+    manifest, data, _, repo = bundle(tmp_path)
+    local = tmp_path/'assets.zip'; local.write_bytes(b'x'*len(data))
+    with pytest.raises(ValueError, match='hash mismatch'):
+        assets.fetch(manifest, None, repo, bundle_file=local)
+    assert not (repo/'data').exists()
+
+
+def test_conflicting_local_asset_is_preserved(tmp_path):
+    manifest, data, _, repo = bundle(tmp_path)
+    local = tmp_path/'assets.zip'; local.write_bytes(data)
+    target = repo/'data/processed/trishuli/example.bin'
+    target.parent.mkdir(parents=True); target.write_bytes(b'user changes')
+    with pytest.raises(ValueError, match='Existing asset differs'):
+        assets.fetch(manifest, None, repo, bundle_file=local)
+    assert target.read_bytes() == b'user changes'
+
+
 def test_corrupt_bundle_does_not_install_assets(tmp_path, monkeypatch):
     manifest, data, _, repo = bundle(tmp_path)
     monkeypatch.setattr(assets.urllib.request, 'urlopen', lambda *a, **k: io.BytesIO(b'x'*len(data)))

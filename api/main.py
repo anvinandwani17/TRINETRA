@@ -59,7 +59,7 @@ def preview_folder(case_id):
 
 
 @app.get('/api/v1/cases/{case_id}/previews')
-def list_previews(case_id: str, method: Literal['baseline', 'experimental_ai'] = 'baseline'):
+def list_previews(case_id: str, method: Literal['baseline', 'experimental_ai', 'baseline_hand', 'experimental_ai_hand'] = 'baseline'):
     folder = preview_folder(case_id)
     choices = {'before':'previews/before.png','after':'previews/after.png',
                'change':'previews/change.png','observability':'previews/observability.png',
@@ -67,6 +67,9 @@ def list_previews(case_id: str, method: Literal['baseline', 'experimental_ai'] =
     if method == 'experimental_ai':
         choices.pop('baseline')
         choices['experimental_ai'] = 'ai_flood_experimental/preview.png'
+    if method.endswith('_hand'):
+        choices.pop('baseline',None)
+        choices[method] = ('baseline_hand' if method=='baseline_hand' else 'ai_flood_hand') + '/hand_candidates.png'
     return {'method': method, 'previews': {key:f'/api/v1/cases/{case_id}/previews/{key}' for key,relative in choices.items() if (folder/relative).is_file()}}
 
 
@@ -75,7 +78,9 @@ def get_preview(case_id: str, kind: str):
     choices = {'before':'previews/before.png','after':'previews/after.png',
                'change':'previews/change.png','observability':'previews/observability.png',
                'baseline':'baseline/previews/flood_mask.png',
-               'experimental_ai':'ai_flood_experimental/preview.png'}
+               'experimental_ai':'ai_flood_experimental/preview.png',
+               'baseline_hand':'baseline_hand/hand_candidates.png',
+               'experimental_ai_hand':'ai_flood_hand/hand_candidates.png'}
     if kind not in choices:
         raise HTTPException(404, 'Unknown preview type')
     folder = preview_folder(case_id)

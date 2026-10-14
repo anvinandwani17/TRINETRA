@@ -6,7 +6,7 @@ Anvi's `src/trinetra` satellite/ML package and Arnav's root `api`, `network`, `r
 
 Select the saved Trishuli AOI/date and a detection method → validate satellite hashes, pair/date, grids and AOI coverage → read candidate and unknown pixels → load bounded pre-event OSM history → intersect infrastructure → model conditional access to mapped medical facilities → display layers → export a grounded report and GeoJSON bundle.
 
-The API uses `api/integrated_jobs.py`, `api/satellite.py`, `network/verified_osm.py`, `network/observed_access.py`, and `reports/grounded.py`. Earlier demo job/OSM/CLI modules are not used by this flow. Use `scripts/run_integrated_case.py` for the connected CLI; `scripts/run_satellite_case.py` remains Anvi's separate acquisition/download command. Do not use the older `scripts/run_case.py` for an operational result.
+The API uses `api/integrated_jobs.py`, `api/satellite.py`, `network/verified_osm.py`, `network/observed_access.py`, and `reports/grounded.py`. Earlier job/OSM/CLI, probability/landing-zone and report prototypes are retired with explicit errors. Use `scripts/run_integrated_case.py` for the connected CLI; it accepts baseline, experimental_ai, baseline_hand and experimental_ai_hand. `scripts/run_satellite_case.py` remains a separate acquisition/download command. See clean_install.md for the updated setup and offline local asset restore.
 
 ## Data contract
 
@@ -62,7 +62,7 @@ npm run build
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Open http://127.0.0.1:5173. Click **Load Trishuli test area**, select **Conservative deterministic baseline**, and click **Run integrated analysis**. Inspect candidate and gray unknown layers, availability states, report and ZIP. Repeat with **Experimental Siamese U-Net pilot**. Without the OSM key, real satellite results still render and infrastructure is explicitly unavailable.
+Open http://127.0.0.1:5173. Select Saved cases, choose Trishuli and load the saved area. Select baseline and run the analysis with scene downloads unchecked. Inspect candidate and gray unknown layers, availability states, report and ZIP. Repeat with experimental AI or its optional HAND variant only when the corresponding saved assets exist. Without the OSM key, real satellite results still render and infrastructure is explicitly unavailable.
 
 For the connected CLI:
 
@@ -74,4 +74,4 @@ New local job outputs are under `data/runs/integrated/<job_id>/`. Protect this d
 
 ## Validation
 
-The integration was checked against the actual uploaded Trishuli baseline/AI rasters and metadata. Ten integration tests cover hashes, date/AOI rejection, mode separation, masked geometry, safe response serialization, report/export isolation, unknown access, OSM missing/empty responses and v2 GeoParquet cache reuse. The React/TypeScript/Vite production build passed. Browser interaction and authenticated live infrastructure extraction still need a Windows/team-key run; a passing build is not proof that every live map/service interaction works.
+Integration has been checked against uploaded Trishuli baseline/AI outputs and later laptop custom-case AI and HAND runs. API tests cover hashes, date/AOI rejection, mode separation, masked geometry, safe serialization, report/export isolation, unknown access, empty/missing OSM and GeoParquet cache reuse. The laptop frontend build and selected live API/UI/export runs passed. See evaluation_status.md for their exact scope; clean-checkout setup, broader scene coverage and model accuracy remain separate acceptance checks.

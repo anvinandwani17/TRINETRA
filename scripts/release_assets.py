@@ -67,11 +67,14 @@ def package(case_dir, model_dir, output):
     print('Publish these files only after checking source redistribution terms; no publication was performed.')
 
 
-def fetch(manifest_path, bundle_url, repo):
+def fetch(manifest_path, bundle_url, repo, *, bundle_file=None):
     manifest = json.loads(Path(manifest_path).read_text(encoding='utf-8-sig'))
     if manifest.get('schema_version') != 1: raise ValueError('Unsupported asset manifest')
-    parsed = urllib.parse.urlsplit(bundle_url)
-    if parsed.scheme != 'https': raise ValueError('Use an HTTPS release URL')
+    if bool(bundle_url) == (bundle_file is not None):
+        raise ValueError('Choose exactly one HTTPS URL or local bundle file')
+    if bundle_file is None:
+        parsed = urllib.parse.urlsplit(bundle_url)
+        if parsed.scheme != 'https': raise ValueError('Use an HTTPS release URL')
     size = manifest['bundle_size_bytes']
     if not isinstance(size, int) or not 0 < size <= 8 * 1024**3: raise ValueError('Invalid bundle size (maximum 8 GiB)')
     repo = Path(repo).resolve()
@@ -88,7 +91,8 @@ def fetch(manifest_path, bundle_url, repo):
             raise ValueError('Existing asset differs; no files replaced: ' + item['path'])
     with tempfile.TemporaryDirectory(prefix='trinetra-assets-') as temp:
         temp = Path(temp); archive = temp / 'bundle.zip'
-        with urllib.request.urlopen(bundle_url, timeout=120) as response, archive.open('wb') as stream:
+        source = Path(bundle_file).open('rb') if bundle_file is not None else urllib.request.urlopen(bundle_url, timeout=120)
+        with source as response, archive.open('wb') as stream:
             total = 0
             while block := response.read(1024 * 1024):
                 total += len(block)
@@ -133,12 +137,14 @@ def main():
     build.add_argument('--output', required=True)
     get = sub.add_parser('fetch')
     get.add_argument('--manifest', required=True)
-    get.add_argument('--bundle-url', required=True)
+    location = get.add_mutually_exclusive_group(required=True)
+    location.add_argument('--bundle-url')
+    location.add_argument('--bundle-file', type=Path)
     get.add_argument('--repo', default='.')
     args = p.parse_args()
     try:
         if args.action == 'package': package(args.case_dir, args.model_dir, args.output)
-        else: fetch(args.manifest, args.bundle_url, args.repo)
+        else: fetch(args.manifest, args.bundle_url, args.repo, bundle_file=args.bundle_file)
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
         p.exit(1, 'Asset operation stopped: ' + str(exc) + '\n')
 

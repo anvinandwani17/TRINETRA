@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--aoi', type=Path)
     parser.add_argument('--date', default='2026-08-26')
-    parser.add_argument('--method', choices=['baseline', 'experimental_ai'], default='baseline')
+    parser.add_argument('--method', choices=['baseline', 'experimental_ai', 'baseline_hand', 'experimental_ai_hand'], default='baseline')
     args = parser.parse_args()
     if args.aoi:
         data = json.loads(args.aoi.read_text(encoding='utf-8-sig'))

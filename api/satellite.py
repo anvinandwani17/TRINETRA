@@ -84,9 +84,10 @@ def to_frame(geometry, properties=None):
 
 
 def load_satellite(aoi, flood_date, config='default'):
-    method = {'default': 'baseline', 'baseline': 'baseline', 'experimental_ai': 'experimental_ai'}.get(config)
+    hand_mode = config in {'baseline_hand','experimental_ai_hand'}
+    method = {'default': 'baseline', 'baseline': 'baseline', 'experimental_ai': 'experimental_ai', 'baseline_hand':'baseline','experimental_ai_hand':'experimental_ai'}.get(config)
     if not method:
-        raise ValueError('Choose baseline or experimental_ai')
+        raise ValueError('Choose baseline, experimental_ai or an experimental HAND variant')
     case_id, folder, request = resolve_case(aoi, flood_date, method)
     requested = shape(request.aoi)
     if not requested.is_valid or requested.is_empty or requested.geom_type != 'Polygon':
@@ -97,8 +98,11 @@ def load_satellite(aoi, flood_date, config='default'):
     if case_id != 'trishuli':
         from trinetra.flood_detection.pipeline import general_processing_grid
         general_processing_grid(processing, folder)
+    if hand_mode:
+        from trinetra.terrain.pipeline import ensure_variants
+        ensure_variants(folder,methods=(method,))
     if method == 'baseline':
-        sub = folder / 'baseline'
+        sub = folder / ('baseline_hand' if hand_mode else 'baseline')
         manifest = read_json(sub / 'baseline_manifest.json')
         keys = {'mask': 'flood_mask', 'geojson': 'flood_geojson', 'score': 'evidence_score'}
         if manifest.get('status') != 'complete':
@@ -107,7 +111,7 @@ def load_satellite(aoi, flood_date, config='default'):
             raise ValueError('Baseline identity differs from the requested case')
         pair = manifest.get('pair', {})
     else:
-        sub = folder / 'ai_flood_experimental'
+        sub = folder / ('ai_flood_hand' if hand_mode else 'ai_flood_experimental')
         manifest = read_json(sub / 'inference_manifest.json')
         keys = {'mask': 'mask', 'geojson': 'geojson', 'score': 'score'}
         if manifest.get('status') != 'complete_experimental':
@@ -194,7 +198,7 @@ def load_satellite(aoi, flood_date, config='default'):
         }
         limitations = [wording.get(item, item) for item in limitations]
     provenance = {
-        'method': method, 'case': case_id, 'flood_date': flood_date,
+        'method': config if hand_mode else method, 'case': case_id, 'flood_date': flood_date,
         'source_pair': pair, 'raw_sha256': processing.get('raw_sha256'),
         'output_sha256': {role: digest(path) for role, path in files.items()},
         'processing_manifest_sha256': digest(folder / 'processing_manifest.json'),
@@ -202,18 +206,19 @@ def load_satellite(aoi, flood_date, config='default'):
         'resolution_m': resolution, 'probability_calibrated': False,
         'limitations': limitations,
         'checkpoint_sha256': manifest.get('signature', {}).get('checkpoint'),
+        'terrain_screen': manifest.get('terrain_screen') if hand_mode else None,
         'aoi_policy': 'Raster decisions are clipped to the requested AOI; resampled edge cells outside it are excluded',
         'full_export_candidate_pixels': manifest.get('candidate_pixels', manifest.get('summary', {}).get('candidate_pixels')),
     }
     summary = {
         'case': case_id,
-        'method': method, 'candidate_pixels': candidates,
+        'method': config if hand_mode else method, 'candidate_pixels': candidates,
         'candidate_area_km2': candidates * pixel_area / 1e6,
         'unknown_area_km2': unsupported * pixel_area / 1e6,
         'assessable_fraction': (int(inside.sum()) - unsupported) / int(inside.sum()),
         'observable_fraction': observable_fraction, 'resolution_m': resolution,
         'flood_date': flood_date, 'probability_calibrated': False,
     }
-    return {'hazard': to_frame(flood, {'classification': 'candidate_flood', 'method': method}),
+    return {'hazard': to_frame(flood, {'classification': 'candidate_flood', 'method': config if hand_mode else method}),
             'unknown': to_frame(unknown, {'classification': 'unknown_or_unsupported', 'method': method}),
             'summary': summary, 'provenance': provenance, 'aoi': requested}

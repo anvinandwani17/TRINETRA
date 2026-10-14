@@ -36,6 +36,28 @@ def probe_start(seed, index, total):
     return value % positions * 512
 
 
+def source_folders(split):
+    if split == 'test':
+        return ['test_GRD', 'train_GRD']
+    if split == 'validation':
+        return ['train_GRD']
+    raise ValueError('Only held-out splits are allowed')
+
+
+def list_labeled_shards(revision, split):
+    shards = []
+    for folder in source_folders(split):
+        api = f'https://huggingface.co/api/datasets/{REPO}/tree/{revision}/{folder}'
+        with urlopen(api, timeout=60) as response:
+            files = json.load(response)
+        found = sorted((row['path'], row['size']) for row in files
+                       if row['path'].startswith(folder + '/') and row['path'].endswith('.tar'))
+        if not found:
+            raise ValueError('No official labeled GRD archives found in ' + folder)
+        shards.extend(found)
+    return shards
+
+
 def fetch(root, config_path, split, per_event, max_mib, probes, seed):
     root = Path(root).resolve()
     if not 1 <= per_event <= 8 or not 1 <= max_mib <= 256 or not 1 <= probes <= 2048:
@@ -53,10 +75,11 @@ def fetch(root, config_path, split, per_event, max_mib, probes, seed):
         return {event: sum(r['split'] == split and r['event_id'] == event for r in rows) for event in targets}
     snapshot = json.loads((root/'metadata/source_snapshot.json').read_text())
     revision = snapshot['hf_revision']
-    signature = {'revision': revision, 'split': split, 'seed': seed,
+    signature = {'revision': revision, 'split': split, 'seed': seed, 'source_folders': source_folders(split),
                  'run_config_sha256': hashlib.sha256(config_bytes).hexdigest(),
                  'split_sha256': report['split_sha256']}
-    state_path = root / 'reports' / f'heldout_{split}_cursor.json'
+    # Preserve the old train-only cursor; the new shard sequence needs its own cursor.
+    state_path = root / 'reports' / f'heldout_{split}_cursor_sources_v2.json'
     state = json.loads(state_path.read_text()) if state_path.exists() else {'signature': signature, 'next_probe': 0, 'rejected': []}
     if state['signature'] != signature: raise ValueError('Fetch cursor belongs to another config/seed/partition')
     catalog = {(str(r['event_id']), str(r['grid_id'])) for r in
@@ -67,10 +90,8 @@ def fetch(root, config_path, split, per_event, max_mib, probes, seed):
     errors = []; visited = set(); current = counts(); rejected = {tuple(x) for x in state.get('rejected', [])}
     start_probe = state['next_probe']
     try:
-        api = f'https://huggingface.co/api/datasets/{REPO}/tree/{revision}/train_GRD'
-        with urlopen(api, timeout=60) as response: files = json.load(response)
-        shards = sorted((f['path'], f['size']) for f in files if f['path'].endswith('.tar'))
-        if not shards: raise ValueError('No official GRD archives found')
+        shards = list_labeled_shards(revision, split)
+        print('Searching labeled folders: ' + ', '.join(source_folders(split)), flush=True)
         for step in range(probes):
             if all(current[e] >= per_event for e in targets): break
             index = start_probe + step
@@ -117,7 +138,7 @@ def fetch(root, config_path, split, per_event, max_mib, probes, seed):
     for row in after:
         if row['split'] == split: validate_sample(root, row)
     current = counts()
-    result = {'split': split, 'samples': sum(current.values()), 'events': sorted(e for e,v in current.items() if v),
+    result = {'split': split, 'source_folders': source_folders(split), 'samples': sum(current.values()), 'events': sorted(e for e,v in current.items() if v),
               'counts_by_event': current, 'missing_events': sorted(e for e,v in current.items() if not v),
               'target_per_event': per_event, 'all_event_quotas_met': all(v>=per_event for v in current.values()),
               'network_mib_this_run': budget.received/1024**2, 'range_budget_mib': max_mib,

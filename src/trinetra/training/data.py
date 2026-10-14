@@ -25,9 +25,13 @@ def guard_record(row, info, assignments):
         raise ValueError('Forbidden holdout case: Trishuli / EMSR927')
     if assignments.get(str(row['event_id'])) != row['split']:
         raise ValueError('Event is not in its official partition')
-    for value in [info['flood_date']] + [s['source_date'] for s in info['sources'].values()]:
-        if not date(2015, 1, 1) <= date.fromisoformat(str(value)[:10]) < date(2023, 1, 1):
-            raise ValueError('Training accepts only the official 2015–2022 release, excluding 2026 cases')
+    flood_date = date.fromisoformat(str(info['flood_date'])[:10])
+    if not date(2015, 1, 1) <= flood_date < date(2023, 1, 1):
+        raise ValueError('Flood event must be within 2015–2022')
+    for source in info['sources'].values():
+        source_date = date.fromisoformat(str(source['source_date'])[:10])
+        if not date(2014, 1, 1) <= source_date < date(2023, 1, 1):
+            raise ValueError('Satellite source date outside supported range')
     if row['source']['repo'] != REPO:
         raise ValueError('Training accepts only the official labeled Kuro Siwo source')
 
