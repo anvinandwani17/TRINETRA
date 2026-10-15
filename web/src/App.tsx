@@ -237,16 +237,44 @@ export default function App() {
         <dt>Potentially affected mapped roads</dt><dd>{count('damaged_road_segments')}</dd>
         <dt>Potentially affected mapped buildings</dt><dd>{count('affected_buildings')}</dd>
         <dt>Potentially affected mapped bridges</dt><dd>{count('affected_bridges')}</dd>
-        <dt>Potential road-access loss</dt><dd>{count('settlements_cut_off')}</dd>
+        <dt>Potential road-access loss to medical facilities</dt><dd>{count('settlements_cut_off')}</dd>
         <dt>Settlements with unknown access</dt><dd>{count('settlements_access_unknown')}</dd>
         <dt>OSM snapshot</dt><dd>{job.summary.osm_snapshot || 'Unavailable'}</dd></dl>
         <p className="notice">Intersections are candidate impacts. Unknown terrain is not dry. No road, walking route or landing zone is certified safe.</p>
         {job.summary.method === 'experimental_ai' && <p className="notice">Pilot AI results are experimental. Accuracy in the requested area and flood probabilities are unverified.</p>}
+        {job.summary.access_scenarios && <section aria-label="Conditional access scenarios">
+          <h2>Town / medical access scenarios</h2>
+          {job.summary.access_scenarios.status !== 'complete' ? <p>Unknown / unavailable: {job.summary.access_scenarios.reason}</p> : <>
+            {(['car', 'foot'] as const).map(mode => {
+              const result = job.summary.access_scenarios[mode];
+              return <div className="notice" key={mode}>
+                <strong>{mode === 'car' ? 'Road' : 'Foot'}: {result.cut_off_lower} to {result.cut_off_upper} conditionally cut off</strong>
+                <p>Unknown roads open: {result.optimistic_disconnected}. Unknown roads closed: {result.pessimistic_disconnected}. Baseline-connected settlements assessed: {result.eligible}.</p>
+                <p>Not assessed: {result.not_assessed}, including {result.baseline_disconnected} already disconnected on the mapped pre-event graph.</p>
+              </div>;
+            })}
+            <p>Fixed nearest pre-event reachable town or medical destination per settlement and travel mode. Network buffer: {job.summary.access_scenarios.network_buffer_m} m. These assumptions do not certify safe routes or physical isolation.</p>
+            <details><summary>Per-settlement destinations and assumptions</summary>
+              <ul>{(layers.settlements?.features || []).map((feature: any, index: number) => <li key={index}>
+                <strong>{feature.properties.name || feature.properties.osm_id}</strong>
+                {(['car', 'foot'] as const).map(mode => {
+                  const value = feature.properties.access_scenarios?.[mode];
+                  return <p key={mode}>{mode}: {value?.eligible ? <>
+                    {value.target.kind} - {value.target.name}; baseline network distance {(value.baseline_network_distance_m / 1000).toFixed(2)} km.
+                    Unknown open: {value.optimistic_connected ? 'connected under assumptions' : 'disconnected under assumptions'}.
+                    Unknown closed: {value.pessimistic_connected ? 'connected under assumptions' : 'disconnected under assumptions'}.
+                  </> : (value?.reason || 'Not assessed')}</p>;
+                })}
+              </li>)}</ul>
+            </details>
+          </>}
+        </section>}
         <h2>Map layers</h2>{definitions.map(({ key, label, color }) => <label className="layer-choice" key={key}>
           <input type="checkbox" checked={visible[key]} onChange={e => setVisible({ ...visible, [key]: e.target.checked })} />
           <span style={{ color }}>●</span> {label}</label>)}
         <h2>Data availability</h2>{Object.entries(job.summary.infrastructure_status).map(([name, state]) => <p key={name}>{name}: {String(state)}</p>)}
-        <div className="exports"><a href={API + '/api/v1/jobs/' + job.id + '/report'} target="_blank" rel="noreferrer">Situation report / PDF</a>
+        <div className="exports"><a href={API + '/api/v1/jobs/' + job.id + '/sitrep.pdf'} target="_blank" rel="noreferrer">One-page situation report / PDF</a>
+          <a href={API + '/api/v1/jobs/' + job.id + '/report'} target="_blank" rel="noreferrer">Detailed report and provenance</a>
           <a href={API + '/api/v1/jobs/' + job.id + '/export'}>Download results ZIP</a></div>
         <details><summary>Sources and limitations</summary><p>Sentinel-1 before: {job.provenance.source_pair.pre_datetime}</p><p>After: {job.provenance.source_pair.post_datetime}</p>
           <ul>{job.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>
@@ -256,3 +284,5 @@ export default function App() {
     </aside><main ref={container} aria-label="Interactive flood and infrastructure map" /></div>
   </div>;
 }
+
+

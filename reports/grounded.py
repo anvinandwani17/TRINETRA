@@ -28,7 +28,24 @@ def report(job):
         value = summary.get(key)
         lines.append(f"| {label} | {value if value is not None else 'Unknown / unavailable'} |")
     lines += ['', 'Route results model the removal of candidate-intersecting road edges. No route is certified safe. Medical facility access is a bounded proxy, not proof of settlement isolation from all destinations.', '',
-              '## Data availability', '']
+              ]
+    scenarios = summary.get('access_scenarios')
+    if scenarios:
+        lines += ['', '## Town / medical access scenarios', '',
+                  'Counts are conditional bounds for settlements connected on the mapped pre-event graph. Each uses a fixed nearest reachable town/city or medical destination; the source town cannot select itself.',
+                  'Candidate-intersecting roads, endpoints and snap connectors are closed in both scenarios. Unknown roads, endpoints and connectors are open in the optimistic scenario and closed in the pessimistic scenario.', '',
+                  f"Network context buffer: {scenarios.get('network_buffer_m')} m; endpoint snap limit: {scenarios.get('snap_limit_m')} m.", '']
+        if scenarios.get('status') != 'complete':
+            lines.append('Unknown / unavailable: ' + scenarios.get('reason', 'Required historical infrastructure is unavailable'))
+        else:
+            lines += ['| Mode | Baseline-connected assessed | Disconnected: unknown open | Disconnected: unknown closed | Not assessed | Already baseline-disconnected |',
+                      '|---|---|---|---|---|---|']
+            for mode in ['car', 'foot']:
+                value = scenarios[mode]
+                lines.append(f"| {mode} | {value['eligible']} | {value['optimistic_disconnected']} | {value['pessimistic_disconnected']} | {value['not_assessed']} | {value['baseline_disconnected']} |")
+            lines += ['', 'Per-settlement fixed destinations and scenario booleans are in settlements.geojson. Counts do not establish physical isolation or safe routes. Snap connectors are modelling assumptions.']
+        lines += ['', scenarios.get('graph_model', ''), '']
+    lines += ['', '## Data availability', '']
     for name, state in summary['infrastructure_status'].items():
         lines.append(f'- {name}: {state}')
     lines += ['', '## Limitations and verification priorities', '']
@@ -43,3 +60,4 @@ def report(job):
         lines.append('Checkpoint SHA256: ' + provenance['checkpoint_sha256'])
     lines += ['', ATTRIBUTIONS.strip()]
     return '\n'.join(lines) + '\n'
+

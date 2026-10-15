@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import uuid
@@ -13,6 +14,7 @@ from api.satellite import load_satellite, data_root
 from network.verified_osm import fetch_infrastructure
 from network.normalize import normalize_roads, normalize_buildings, normalize_targets
 from network.observed_access import analyze
+from network.access_scenarios import buffered_query_aoi, analyze_scenarios
 
 _JOBS = {}
 _PIPELINE_SEMAPHORE = asyncio.Semaphore(1)
@@ -125,7 +127,30 @@ async def run_job(job_id, satellite=None):
             set_stage(job, JobState.PROCESSING, 'Verifying flood rasters, metadata hashes and requested AOI...')
             satellite = await asyncio.to_thread(load_satellite, job['aoi'], job['flood_date'], job['config'])
         set_stage(job, JobState.OSM_QUERYING, 'Querying verified pre-event OSM history...')
-        infra, osm, warnings = await asyncio.to_thread(fetch_infrastructure, job['aoi'], job['flood_date'])
+        buffer_m = float(os.getenv('TRINETRA_ACCESS_BUFFER_M', '2000'))
+        query_aoi = buffered_query_aoi(job['aoi'], buffer_m)
+        infra, osm, warnings = await asyncio.to_thread(fetch_infrastructure, query_aoi, job['flood_date'])
+        from shapely.geometry import shape
+        case_boundary, query_boundary = satellite['aoi'], shape(query_aoi)
+        context_status = {key: value['status'] for key, value in osm['layers'].items()}
+        # The query has routing context; exposures and source settlements stay in the case.
+        context_roads = normalize_roads(infra['roads'])
+        for column in ['access', 'motor_vehicle']:
+            if column in infra['roads'] and not context_roads.empty:
+                values = infra['roads'].set_index('osm_id')[column].to_dict()
+                context_roads[column] = context_roads['osm_id'].map(values)
+        if not context_roads.empty:
+            context_roads['geometry'] = context_roads.geometry.intersection(query_boundary)
+            context_roads = context_roads[~context_roads.geometry.is_empty].copy()
+        context_settlements = normalize_targets(infra['settlements'])
+        context_hospitals = normalize_targets(infra['hospitals'])
+        context_settlements = context_settlements[context_settlements.geometry.apply(query_boundary.covers)].copy() if not context_settlements.empty else context_settlements
+        context_hospitals = context_hospitals[context_hospitals.geometry.apply(query_boundary.covers)].copy() if not context_hospitals.empty else context_hospitals
+        case_infra = {name: frame[frame.geometry.intersects(case_boundary)].copy() if not frame.empty else frame for name, frame in infra.items()}
+        case_status = {name: ('empty' if context_status.get(name) in {'available','empty'} and frame.empty else context_status.get(name,'unavailable')) for name,frame in case_infra.items()}
+        osm = {**osm, 'query_scope': 'case_plus_access_network_buffer', 'query_aoi': query_aoi,
+               'network_buffer_m': buffer_m, 'case_features': {name: len(frame) for name,frame in case_infra.items()}}
+        infra = case_infra
         roads = normalize_roads(infra['roads'])
         # Keep routing restrictions that the original normalizer does not retain.
         for column in ['access', 'motor_vehicle']:
@@ -138,10 +163,18 @@ async def run_job(job_id, satellite=None):
         set_stage(job, JobState.NETWORK_ANALYSIS, 'Screening infrastructure intersections and conditional road access...')
         impact = await asyncio.to_thread(analyze, roads, buildings, settlements, hospitals,
                                         satellite['hazard'], satellite['unknown'], satellite['aoi'])
+        scenarios, scenario_details = await asyncio.to_thread(analyze_scenarios,
+            context_roads, settlements, context_settlements, context_hospitals,
+            satellite['hazard'], satellite['unknown'], satellite['aoi'], context_status, buffer_m)
+        impact['summary']['access_scenarios'] = scenarios
+        for item in impact['settlements']:
+            item['access_scenarios'] = scenario_details.get(str(item['osm_id']), {})
+        for item in impact['layers']['settlements']['features']:
+            item['properties']['access_scenarios'] = scenario_details.get(str(item['properties']['osm_id']), {})
         layers = {'flood_extent': json.loads(satellite['hazard'].to_json()),
                   'unobservable': json.loads(satellite['unknown'].to_json()), **impact['layers']}
         summary = {**satellite['summary'], **impact['summary'], 'osm_snapshot': osm['snapshot_requested'],
-                   'infrastructure_status': {key: value['status'] for key, value in osm['layers'].items()},
+                   'infrastructure_status': case_status,
                    's2_optical_available': None, 's2_optical_date': None, 's2_cloud_cover': 'Not queried',
                    'interpretation': 'Candidate flood evidence and conditional route impact; physical damage and passability are unverified'}
         statuses = summary['infrastructure_status']
@@ -157,7 +190,9 @@ async def run_job(job_id, satellite=None):
         if any(value == 'empty' for value in statuses.values()):
             warnings.append('One or more infrastructure queries returned no mapped features; this does not prove absence on the ground')
         warnings += ['Unknown or unsupported pixels are never classified as dry or used to certify a safe route',
-                     'Connectivity uses mapped nodes and a 500 m endpoint snapping limit; missing topology and routes beyond the AOI can change access results',
+                     'Existing hospital-only counts use the case AOI; town/medical scenarios use bounded context and a fixed nearest pre-event reachable destination',
+                     'Access scenarios use a 500 m endpoint snap limit and undirected coordinate-node graphs; one-way restrictions and missing topology are not resolved',
+                     'All roads, endpoints and snap connectors outside observed terrain are unknown; optimistic scenarios assume them open and pessimistic scenarios close them',
                      'Candidate-intersecting roads are removed only in a conditional scenario; field verification is required',
                      'Landing zones, Sentinel-2 availability and calibrated closure probabilities have not been assessed']
         if satellite['summary']['method'].startswith('experimental_ai'):
@@ -168,12 +203,12 @@ async def run_job(job_id, satellite=None):
                       'satellite_cache_hit':job['cache_hit'],
                       'cache_hit': any(value.get('cache_hit', False) for value in osm['layers'].values()),
                       'data_source': 'Copernicus Data Space Sentinel-1 + historical OpenStreetMap / ohsome',
-                      'note': summary['interpretation'], 'warnings': warnings}
+                      'note': summary['interpretation'], 'warnings': warnings, 'access_scenarios': scenarios}
         job.update(layers=layers, summary=summary, provenance=provenance, warnings=warnings,
                    cache_hit=job['cache_hit'] or provenance['cache_hit'], **impact['handles'])
         provenance['pipeline_trace'] = job.get('pipeline_trace')
         job['cache_key'] = hashlib.sha256(json.dumps({'aoi': job['aoi'], 'date': job['flood_date'],
-            'config': job['config'], 'satellite': satellite['provenance'], 'osm': osm}, sort_keys=True).encode()).hexdigest()
+            'config': job['config'], 'satellite': satellite['provenance'], 'osm': osm, 'access_scenarios': scenarios}, sort_keys=True).encode()).hexdigest()
         set_stage(job, JobState.REPORTING, 'Writing grounded situation report and export layers...')
         runs = data_root() / 'runs/integrated' / job_id
         runs.mkdir(parents=True, exist_ok=True)
@@ -190,3 +225,4 @@ async def run_job(job_id, satellite=None):
         save_job(job)
     except Exception as exc:
         fail_job(job, exc)
+
