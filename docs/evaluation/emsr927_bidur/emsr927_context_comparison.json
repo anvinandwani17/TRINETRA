@@ -1,0 +1,565 @@
+{
+  "schema_version": 1,
+  "status": "complete_spatial_context_comparison",
+  "created_utc": "2026-10-14T19:29:20.708064+00:00",
+  "reference": {
+    "fid": 1,
+    "emsr_id": "EMSR927",
+    "glide_no": "FF-2026-000162-NPL",
+    "area_id": "03",
+    "locality": "Bidur",
+    "map_type": "Grading-Monit01"
+  },
+  "input_sha256": {
+    "reference_gpkg": "cc2272e530c0cf0f00b567cad4df0c32d0fbbcf1e10ff5186b119a0baf4e8d2a",
+    "ai_mask": "79fdb86aa099800d515b90bc38bac5a34c2085500636094391433dae4657461f",
+    "baseline_mask": "eeddf4eaefed0dfa919855882e0279280efb2e35709fe3833be2776385c5d4ce",
+    "physical_observability": "008d0a2c10dc80b72736e1ace5246c1e5141fa0d847b36932773d0e4a2ef4605",
+    "ai_manifest": "84e36e128f2461c21871c1bd9c42148ad822d803540f9a441965e0197df81335",
+    "hand_export": "d3d35a797e817d5f94eb801abe74c8dc99c55034eb5523b105a11399644948b8"
+  },
+  "checkpoint_sha256": "02b9cfccc7f3a5f0953b69db4623738dfbe52beec93a4aab562e6f95f8562214",
+  "reference_hazard_classes": [
+    {
+      "event_type": "6-Mass Movement",
+      "object": "Landslide",
+      "features": 5
+    }
+  ],
+  "reference_sources": [
+    {
+      "fid": 1,
+      "source_nam": "Open Street Map",
+      "src_date": "27/08/2026",
+      "source_tm": "Not Applicable",
+      "sensor_res": "Not Applicable",
+      "eventphase": "Pre-event",
+      "src_id": 994,
+      "charter_id": "Not Applicable"
+    },
+    {
+      "fid": 2,
+      "source_nam": "Not Applicable",
+      "src_date": "Not Applicable",
+      "source_tm": "Not Applicable",
+      "sensor_res": "Not Applicable",
+      "eventphase": "Not Applicable",
+      "src_id": 997,
+      "charter_id": "Not Applicable"
+    },
+    {
+      "fid": 3,
+      "source_nam": "Copernicus Global Land Cover",
+      "src_date": "2019",
+      "source_tm": "Not Applicable",
+      "sensor_res": "100.0 m",
+      "eventphase": "Pre-event",
+      "src_id": 982,
+      "charter_id": "Not Applicable"
+    },
+    {
+      "fid": 4,
+      "source_nam": "Overture",
+      "src_date": "dd/mm/aaaa",
+      "source_tm": "Not Applicable",
+      "sensor_res": "Not Applicable",
+      "eventphase": "Pre-event",
+      "src_id": 978,
+      "charter_id": "Not Applicable"
+    },
+    {
+      "fid": 5,
+      "source_nam": "ESRI World Imagery",
+      "src_date": "05/02/2026",
+      "source_tm": "T00:00:00Z",
+      "sensor_res": "0.6",
+      "eventphase": "Pre-event",
+      "src_id": 1,
+      "charter_id": "Not Applicable"
+    },
+    {
+      "fid": 6,
+      "source_nam": "PERUSAT",
+      "src_date": "27/08/2026",
+      "source_tm": "T04:47:00Z",
+      "sensor_res": "0.70 m",
+      "eventphase": "Post-event",
+      "src_id": 4,
+      "charter_id": "1052"
+    },
+    {
+      "fid": 7,
+      "source_nam": "RESURSP",
+      "src_date": "28/08/2026",
+      "source_tm": "T08:29:00Z",
+      "sensor_res": "0.60 m",
+      "eventphase": "Post-event",
+      "src_id": 5,
+      "charter_id": "1052"
+    }
+  ],
+  "prediction_post_datetime": "2026-08-28T12:21:41.762029Z",
+  "threshold": 0.5,
+  "threshold_tuned": false,
+  "training_performed": false,
+  "grid": {
+    "crs": "EPSG:32645",
+    "shape": [
+      1124,
+      1004
+    ],
+    "pixel_area_m2": 100.0,
+    "transform": [
+      10.0,
+      0.0,
+      312980.0,
+      0.0,
+      -10.0,
+      3098660.0
+    ]
+  },
+  "coverage": {
+    "reference_analysed_inside_case_km2": 12.088,
+    "reference_landslide_inside_case_km2": 4.7904,
+    "reference_landslide_outside_case_in_raster_km2": 0.0705
+  },
+  "landslide_footprint_inside_case": {
+    "pilot_ai": {
+      "reference_pixels": 47904,
+      "reference_area_km2": 4.7904,
+      "candidate_pixels": 7730,
+      "non_candidate_pixels": 35161,
+      "unknown_inside_case_pixels": 5013,
+      "outside_case_pixels": 0,
+      "candidate_share": 0.16136439545758183,
+      "unknown_share": 0.10464679358717435,
+      "not_water_flood_accuracy": true
+    },
+    "baseline": {
+      "reference_pixels": 47904,
+      "reference_area_km2": 4.7904,
+      "candidate_pixels": 584,
+      "non_candidate_pixels": 24986,
+      "unknown_inside_case_pixels": 22334,
+      "outside_case_pixels": 0,
+      "candidate_share": 0.012191048764195057,
+      "unknown_share": 0.4662241148964596,
+      "not_water_flood_accuracy": true
+    },
+    "pilot_ai_hand_export": {
+      "reference_pixels": 47904,
+      "reference_area_km2": 4.7904,
+      "candidate_pixels": 5239,
+      "non_candidate_pixels": 17165,
+      "unknown_inside_case_pixels": 25500,
+      "outside_case_pixels": 0,
+      "candidate_share": 0.10936456245824984,
+      "unknown_share": 0.532314629258517,
+      "not_water_flood_accuracy": true
+    }
+  },
+  "landslide_footprint_in_raster_rectangle": {
+    "pilot_ai": {
+      "reference_pixels": 48609,
+      "reference_area_km2": 4.8609,
+      "candidate_pixels": 7730,
+      "non_candidate_pixels": 35161,
+      "unknown_inside_case_pixels": 5013,
+      "outside_case_pixels": 705,
+      "candidate_share": 0.15902404904441564,
+      "unknown_share": 0.10312905017589336,
+      "not_water_flood_accuracy": true
+    },
+    "baseline": {
+      "reference_pixels": 48609,
+      "reference_area_km2": 4.8609,
+      "candidate_pixels": 584,
+      "non_candidate_pixels": 24986,
+      "unknown_inside_case_pixels": 22334,
+      "outside_case_pixels": 705,
+      "candidate_share": 0.012014236046822604,
+      "unknown_share": 0.4594622395029727,
+      "not_water_flood_accuracy": true
+    },
+    "pilot_ai_hand_export": {
+      "reference_pixels": 48609,
+      "reference_area_km2": 4.8609,
+      "candidate_pixels": 5239,
+      "non_candidate_pixels": 17165,
+      "unknown_inside_case_pixels": 25500,
+      "outside_case_pixels": 705,
+      "candidate_share": 0.10777839494743771,
+      "unknown_share": 0.5245942109485897,
+      "not_water_flood_accuracy": true
+    }
+  },
+  "infrastructure": {
+    "transportationL_v1": {
+      "source_features": 670,
+      "nonempty_geometry_features": 662,
+      "unlocated_empty_geometry_by_grade": {
+        "No visible damage": 8
+      },
+      "damage_grade_counts_nonempty_geometry": {
+        "No visible damage": 290,
+        "Possibly damaged": 108,
+        "Destroyed": 262,
+        "Not Analysed": 1,
+        "Damaged": 1
+      },
+      "inside_evaluation_coverage_by_grade": {
+        "No visible damage": 184,
+        "Destroyed": 189,
+        "Possibly damaged": 71,
+        "Damaged": 1
+      },
+      "outside_evaluation_coverage_by_grade": {
+        "No visible damage": 106,
+        "Possibly damaged": 37,
+        "Destroyed": 73,
+        "Not Analysed": 1
+      },
+      "partially_covered_line_features": 11,
+      "line_length_outside_evaluation_m": 52716.01569193694,
+      "duplicate_geometry_and_grade_rows": 0,
+      "model_feature_counts": {
+        "pilot_ai": {
+          "No visible damage": {
+            "non_candidate": 154,
+            "candidate_intersection": 8,
+            "unknown_no_candidate": 22
+          },
+          "Destroyed": {
+            "candidate_intersection": 34,
+            "non_candidate": 129,
+            "unknown_no_candidate": 26
+          },
+          "Possibly damaged": {
+            "non_candidate": 53,
+            "unknown_no_candidate": 11,
+            "candidate_intersection": 7
+          },
+          "Damaged": {
+            "unknown_no_candidate": 1
+          }
+        },
+        "baseline": {
+          "No visible damage": {
+            "unknown_no_candidate": 121,
+            "non_candidate": 63
+          },
+          "Destroyed": {
+            "unknown_no_candidate": 159,
+            "non_candidate": 29,
+            "candidate_intersection": 1
+          },
+          "Possibly damaged": {
+            "unknown_no_candidate": 54,
+            "non_candidate": 17
+          },
+          "Damaged": {
+            "unknown_no_candidate": 1
+          }
+        },
+        "pilot_ai_hand_export": {
+          "No visible damage": {
+            "unknown_no_candidate": 170,
+            "non_candidate": 13,
+            "candidate_intersection": 1
+          },
+          "Destroyed": {
+            "candidate_intersection": 21,
+            "unknown_no_candidate": 158,
+            "non_candidate": 10
+          },
+          "Possibly damaged": {
+            "unknown_no_candidate": 70,
+            "non_candidate": 1
+          },
+          "Damaged": {
+            "unknown_no_candidate": 1
+          }
+        }
+      },
+      "model_line_lengths_by_grade": {
+        "pilot_ai": {
+          "No visible damage": {
+            "non_candidate_m": 41130.46572317347,
+            "candidate_m": 451.62348735804204,
+            "unknown_inside_case_m": 2721.7465844636986
+          },
+          "Destroyed": {
+            "non_candidate_m": 22402.513967453582,
+            "candidate_m": 2687.1728696718487,
+            "unknown_inside_case_m": 3943.109112339047
+          },
+          "Possibly damaged": {
+            "non_candidate_m": 4868.744357426759,
+            "candidate_m": 496.71327823435934,
+            "unknown_inside_case_m": 568.3273730149327
+          },
+          "Damaged": {
+            "non_candidate_m": 0.0,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 110.38260859798882
+          }
+        },
+        "baseline": {
+          "No visible damage": {
+            "non_candidate_m": 22016.913431520534,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 22286.9223634747
+          },
+          "Destroyed": {
+            "non_candidate_m": 12404.41145189488,
+            "candidate_m": 1.5067459480426908,
+            "unknown_inside_case_m": 16626.877751621545
+          },
+          "Possibly damaged": {
+            "non_candidate_m": 1295.0316903677972,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 4638.753318308253
+          },
+          "Damaged": {
+            "non_candidate_m": 0.0,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 110.38260859798882
+          }
+        },
+        "pilot_ai_hand_export": {
+          "No visible damage": {
+            "non_candidate_m": 1568.745405897927,
+            "candidate_m": 54.40865606138287,
+            "unknown_inside_case_m": 42680.68173303592
+          },
+          "Destroyed": {
+            "non_candidate_m": 6653.5601667453975,
+            "candidate_m": 1075.2777979127088,
+            "unknown_inside_case_m": 21303.957984806362
+          },
+          "Possibly damaged": {
+            "non_candidate_m": 318.00844208212214,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 5615.776566593927
+          },
+          "Damaged": {
+            "non_candidate_m": 0.0,
+            "candidate_m": 0.0,
+            "unknown_inside_case_m": 110.38260859798882
+          }
+        }
+      },
+      "point_policy": "Exact pixel containing reference point; no matching buffer or OSM identity match",
+      "not_damage_classification_accuracy": true
+    },
+    "transportationP_v1": {
+      "source_features": 26,
+      "nonempty_geometry_features": 26,
+      "unlocated_empty_geometry_by_grade": {},
+      "damage_grade_counts_nonempty_geometry": {
+        "Destroyed": 24,
+        "Possibly damaged": 2
+      },
+      "inside_evaluation_coverage_by_grade": {
+        "Destroyed": 20,
+        "Possibly damaged": 2
+      },
+      "outside_evaluation_coverage_by_grade": {
+        "Destroyed": 4
+      },
+      "partially_covered_line_features": 0,
+      "line_length_outside_evaluation_m": 0.0,
+      "duplicate_geometry_and_grade_rows": 0,
+      "model_feature_counts": {
+        "pilot_ai": {
+          "Destroyed": {
+            "non_candidate": 13,
+            "candidate": 6,
+            "unknown_inside_case": 1
+          },
+          "Possibly damaged": {
+            "non_candidate": 2
+          }
+        },
+        "baseline": {
+          "Destroyed": {
+            "unknown_inside_case": 5,
+            "non_candidate": 13,
+            "candidate": 2
+          },
+          "Possibly damaged": {
+            "non_candidate": 1,
+            "unknown_inside_case": 1
+          }
+        },
+        "pilot_ai_hand_export": {
+          "Destroyed": {
+            "non_candidate": 9,
+            "unknown_inside_case": 5,
+            "candidate": 6
+          },
+          "Possibly damaged": {
+            "unknown_inside_case": 2
+          }
+        }
+      },
+      "model_line_lengths_by_grade": {
+        "pilot_ai": {},
+        "baseline": {},
+        "pilot_ai_hand_export": {}
+      },
+      "point_policy": "Exact pixel containing reference point; no matching buffer or OSM identity match",
+      "not_damage_classification_accuracy": true
+    },
+    "builtUpP_v1": {
+      "source_features": 3058,
+      "nonempty_geometry_features": 3058,
+      "unlocated_empty_geometry_by_grade": {},
+      "damage_grade_counts_nonempty_geometry": {
+        "Possibly damaged": 333,
+        "Destroyed": 2479,
+        "Damaged": 246
+      },
+      "inside_evaluation_coverage_by_grade": {
+        "Destroyed": 1919,
+        "Possibly damaged": 159,
+        "Damaged": 205
+      },
+      "outside_evaluation_coverage_by_grade": {
+        "Possibly damaged": 174,
+        "Destroyed": 560,
+        "Damaged": 41
+      },
+      "partially_covered_line_features": 0,
+      "line_length_outside_evaluation_m": 0.0,
+      "duplicate_geometry_and_grade_rows": 0,
+      "model_feature_counts": {
+        "pilot_ai": {
+          "Destroyed": {
+            "non_candidate": 1407,
+            "unknown_inside_case": 307,
+            "candidate": 205
+          },
+          "Possibly damaged": {
+            "unknown_inside_case": 20,
+            "non_candidate": 136,
+            "candidate": 3
+          },
+          "Damaged": {
+            "unknown_inside_case": 10,
+            "non_candidate": 190,
+            "candidate": 5
+          }
+        },
+        "baseline": {
+          "Destroyed": {
+            "unknown_inside_case": 872,
+            "non_candidate": 1042,
+            "candidate": 5
+          },
+          "Possibly damaged": {
+            "unknown_inside_case": 95,
+            "non_candidate": 64
+          },
+          "Damaged": {
+            "unknown_inside_case": 58,
+            "non_candidate": 147
+          }
+        },
+        "pilot_ai_hand_export": {
+          "Destroyed": {
+            "unknown_inside_case": 1456,
+            "non_candidate": 382,
+            "candidate": 81
+          },
+          "Possibly damaged": {
+            "unknown_inside_case": 149,
+            "non_candidate": 10
+          },
+          "Damaged": {
+            "unknown_inside_case": 191,
+            "non_candidate": 10,
+            "candidate": 4
+          }
+        }
+      },
+      "model_line_lengths_by_grade": {
+        "pilot_ai": {},
+        "baseline": {},
+        "pilot_ai_hand_export": {}
+      },
+      "point_policy": "Exact pixel containing reference point; no matching buffer or OSM identity match",
+      "not_damage_classification_accuracy": true
+    }
+  },
+  "osm_export_provenance": {
+    "snapshot_requested": "2026-08-25T00:00:00Z",
+    "latest_available": "2026-10-14T06:33:02Z",
+    "metadata_cache_hit": false,
+    "source": "ohsome API v2 / OpenStreetMap",
+    "layers": {
+      "roads": {
+        "status": "available",
+        "snapshot_requested": "2026-08-25T00:00:00Z",
+        "features": 1383,
+        "cache_hit": true,
+        "endpoint": "https://api.heigit.org/ohsome-api/v2-rc/extraction/features.parquet",
+        "response_sha256": "5a99cfb04b358cbf0713ed3fab7dc9ff0d182848ac6432b532f46a9fdcc80f4b",
+        "attribution": {
+          "url": "https://ohsome.org/copyrights",
+          "text": "\u00a9 OpenStreetMap contributors"
+        }
+      },
+      "buildings": {
+        "status": "available",
+        "snapshot_requested": "2026-08-25T00:00:00Z",
+        "features": 20595,
+        "cache_hit": true,
+        "endpoint": "https://api.heigit.org/ohsome-api/v2-rc/extraction/features.parquet",
+        "response_sha256": "838b4787078c46c0b1e126993feed3d1abb5e4314d2612fd4e8be61bbbb25cc3",
+        "attribution": {
+          "url": "https://ohsome.org/copyrights",
+          "text": "\u00a9 OpenStreetMap contributors"
+        }
+      },
+      "settlements": {
+        "status": "available",
+        "snapshot_requested": "2026-08-25T00:00:00Z",
+        "features": 12,
+        "cache_hit": true,
+        "endpoint": "https://api.heigit.org/ohsome-api/v2-rc/extraction/features.parquet",
+        "response_sha256": "3e077ba1799eb0c55112d00021f9d25c57737a35e9ce69c3f2c47e5fe0a21a90",
+        "attribution": {
+          "url": "https://ohsome.org/copyrights",
+          "text": "\u00a9 OpenStreetMap contributors"
+        }
+      },
+      "hospitals": {
+        "status": "available",
+        "snapshot_requested": "2026-08-25T00:00:00Z",
+        "features": 6,
+        "cache_hit": true,
+        "endpoint": "https://api.heigit.org/ohsome-api/v2-rc/extraction/features.parquet",
+        "response_sha256": "efbba079d65a11a93ad5ec89ae26622ab10777444d53e7004292d2a7fed059e2",
+        "attribution": {
+          "url": "https://ohsome.org/copyrights",
+          "text": "\u00a9 OpenStreetMap contributors"
+        }
+      }
+    }
+  },
+  "flood_accuracy_computed": false,
+  "damage_accuracy_computed": false,
+  "limitations": [
+    "Reference polygons are landslides, predictions are water-flood candidates; overlap is not class-specific accuracy.",
+    "No visible damage is not proof of dry land; graded infrastructure is not a flood-water reference.",
+    "Physical AOI is inherited from the 20 m observability mask with nearest-neighbour alignment; no finer boundary accuracy is claimed.",
+    "The baseline is resampled from 20 m to 10 m for display/accounting only; no added accuracy.",
+    "HAND comparison reconstructs an existing AOI-clipped export, not a new raster inference.",
+    "Reference image dates and sensors differ; some damage grades use 27 August imagery, others 28 August.",
+    "Building points differ from OSM building polygons; point sampling is not object matching.",
+    "No one-to-one reference-to-OSM identity matching or spatial-tolerance tuning was performed.",
+    "Road pieces with a candidate intersection may also contain unknown terrain; line lengths preserve both.",
+    "Results describe one frozen pilot, not the separately trained candidate."
+  ]
+}

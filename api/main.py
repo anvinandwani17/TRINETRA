@@ -16,6 +16,7 @@ from api.integrated_jobs import create_job, get_job, public_job, run_job, run_pi
 from api.satellite import case_aoi, load_satellite, available_cases, data_root, ROOT
 from reports.grounded import report
 from reports.html_report import report_html
+from reports.one_page import one_page_pdf
 from reports.credits import ATTRIBUTIONS
 from typing import Literal
 
@@ -159,6 +160,24 @@ def get_job_report(job_id: str, lang: str = 'en'):
     return HTMLResponse(report_html(require_job(job_id, True)))
 
 
+def render_one_page(job):
+    try:
+        return one_page_pdf(job)
+    except ImportError as exc:
+        raise HTTPException(503, 'Install requirements-onepage.txt to generate the compact PDF') from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get('/api/v1/jobs/{job_id}/sitrep.pdf')
+def get_job_one_page(job_id: str, lang: str = 'en'):
+    if lang != 'en':
+        raise HTTPException(422, 'This grounded report currently supports English only')
+    job = require_job(job_id, True)
+    return Response(render_one_page(job), media_type='application/pdf',
+        headers={'Content-Disposition': 'inline; filename=TRINETRA_one_page_situation_report.pdf'})
+
+
 @app.get('/api/v1/jobs/{job_id}/export')
 def export_job_bundle(job_id: str):
     job = require_job(job_id, True)
@@ -168,9 +187,11 @@ def export_job_bundle(job_id: str):
         archive.writestr('provenance.json', json.dumps(job['provenance'], indent=2))
         archive.writestr('SITREP.md', report(job))
         archive.writestr('SITREP.html', report_html(job))
+        archive.writestr('SITREP_ONE_PAGE.pdf', render_one_page(job))
         archive.writestr('ATTRIBUTION.md', ATTRIBUTIONS)
         archive.writestr('EXPORT_README.txt',
             'Candidate evidence and conditional impacts; no confirmed damage or safe routes.\n'
+            'SITREP_ONE_PAGE.pdf is the compact system-generated A4 report; SITREP.html and SITREP.md retain the full report.\n'
             'candidate_affected_roads.geojson replaces the legacy damaged_roads export name.\n'
             'API layer identifiers and existing job summaries retain their old keys for compatibility.\n'
             'Empty layers mean no exported features, not necessarily available source data.\n'
@@ -187,3 +208,4 @@ def export_job_bundle(job_id: str):
 def simulate_restoration(job_id: str, payload: RestoreEdgeRequest):
     require_job(job_id, True)
     raise HTTPException(501, 'Restoration simulation needs observability-aware validation; candidate exposure does not establish a physically damaged edge')
+

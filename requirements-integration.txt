@@ -5,3 +5,4 @@ networkx>=3.4,<4
 scipy>=1.14,<2
 python-dotenv>=1,<2
 pyarrow>=19,<25
+-r requirements-onepage.txt

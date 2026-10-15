@@ -8,18 +8,19 @@ Anvi owns the satellite/flood-AI Python package in `src/trinetra`. Arnav owns th
 
 ## What it does
 
-Pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic baseline and/or experimental AI → optional HAND screening → historical OSM exposure → conditional access → interactive map → exportable situation report.
+Pipeline: discovery → selected-scene download/cache → physical SNAP preprocessing → deterministic baseline and/or experimental AI → optional HAND screening → historical OSM exposure → conditional access → interactive map → one-page PDF and detailed report.
 
 - AOIs are bounded to **300 km²** and need a suitable same-orbit Sentinel-1 pre/post pair.
 - Downloads are **off by default**. Cached scenes are hash-verified and reused; missing scenes need the explicit download option.
-- The pipeline never trains a model.
+- The dashboard keeps candidate evidence, unsupported terrain and mapped impacts visually distinct. The pipeline never trains a model.
+- A reproducible export carries satellite IDs, source hashes, OSM snapshot and availability, per-settlement access scenarios, GeoJSON layers and a system-generated one-page PDF.
 - The saved **Trishuli / 26 August 2026** case and one separate custom area/date run were completed and exported. Broader place/date coverage and accuracy are unvalidated.
 
 ## Choose your path
 
 | Goal | What you need | Time |
 |---|---|---|
-| **A. Inspect the saved Trishuli case** (recommended for reviewers) | Python, Node, `OHSOME_API_KEY`, the saved case asset bundle | ~10 min |
+| **A. Inspect the saved Trishuli case** (recommended for reviewers) | Python, Node, `OHSOME_API_KEY`, the saved case asset bundle | ~20 min, varies with OSM extraction |
 | **B. Run a new AOI/date** | Everything in A, plus Copernicus Data Space credentials and ESA SNAP | 30+ min, depends on downloads |
 
 > **Important:** large case assets (raw scenes, rasters, model weights) are **not in Git**. A source clone alone cannot load the saved case. See [Case assets](#case-assets) before step 4.
@@ -67,27 +68,34 @@ OHSOME_API_KEY=your_key_here
 
 A missing key or a source failure yields *unavailable/unknown* infrastructure. Roads and settlements are never invented.
 
-### 3. Set the SNAP path (Path B only)
+### 3. Set saved-case paths
+
+The saved AI + HAND demo needs the original local case data, pilot checkpoint and run config. For the team's laptop layout, set these in the backend terminal:
 
 ```powershell
+$original = "$env:USERPROFILE\OneDrive\Desktop\TRINETRA"
+$env:TRINETRA_HAND_SOURCE_CASE_DIR = "$original\data\processed\trishuli"
+$env:TRINETRA_AI_CHECKPOINT = "$original\artifacts\models\siamese_v1\pilot\best.pt"
+$env:TRINETRA_AI_RUN_CONFIG = "$original\artifacts\models\siamese_v1\pilot\run_config.json"
+# Only required for fresh physical preprocessing (Path B):
 $env:SNAP_GPT = "C:\Program Files\esa-snap\bin\gpt.exe"
 ```
 
-This applies to the current terminal only. Set it again in each new session, or add it to `.env` if your configuration reads it from there.
+Set `TRINETRA_CASE_DIR` as well if the saved case is outside the repository default. These values apply to the current terminal only; change them for other installations.
 
 ### 4. Case assets
 
 Place the saved Trishuli asset bundle in the locations described in [docs/integration.md](docs/integration.md) (and [docs/reproducibility.md](docs/reproducibility.md) for hash-checked restoration).
 
-> TODO before submission: add the public download link/release tag for the asset bundle here, plus the expected SHA-256 of the archive. Public large-asset delivery is currently unresolved.
+> **Reviewer note:** public large-asset delivery is still unresolved. Add a verified release link and SHA-256 here before claiming that a clean clone can run the saved AI case.
 
 ### 5. Verify the install
 
 ```powershell
-python -m pytest tests -q --tb=short
+python -m pytest -q --disable-warnings tests/test_access_scenarios.py tests/test_integration.py tests/test_one_page_report.py tests/test_submission_reports.py
 ```
 
-If tests that depend on case assets fail on a fresh clone, check step 4 first.
+The latest team laptop check passed 36 selected tests and the production frontend build. Broader tests may need local case assets or optional dependencies; check step 4.
 
 ### 6. Start the backend (terminal 1, venv active)
 
@@ -115,7 +123,7 @@ Open <http://127.0.0.1:5173>.
 1. Select the saved **Trishuli** case and click **Load selected saved area**.
 2. Choose the verified method (**experimental AI + HAND** for the submitted export; baseline is the conservative default).
 3. Leave **scene downloads unchecked**.
-4. Inspect acquisition dates, unknown terrain, the situation report and the results ZIP.
+4. Inspect acquisition dates, unknown terrain, the system-generated one-page PDF, detailed situation report and results ZIP. The PDF is available at `/api/v1/jobs/{job_id}/sitrep.pdf` and as `SITREP_ONE_PAGE.pdf` in the ZIP.
 
 For a new area (Path B): draw a Polygon, choose a historical UTC day, and tick the download option only if scenes are missing. Run stages, elapsed times, source availability, preview links and exports are shown in the UI.
 
@@ -155,17 +163,36 @@ The submission was verified on Windows. Other platforms are untested.
 | `npm ci` or Vite fails | Node is older than 20.19 / 22.12. Upgrade Node. |
 | Vite exits with "port in use" | Another process holds 5173. Stop it, or choose another port. |
 | Frontend loads but shows API errors | Backend not running on `127.0.0.1:8000`. Check terminal 1. |
-| Experimental AI unavailable | Needs the frozen checkpoint and run config. General-case AI also needs separate Sigma0 preprocessing. |
+| Experimental AI unavailable | Needs the frozen checkpoint and run config. HAND also needs `TRINETRA_HAND_SOURCE_CASE_DIR`. General-case AI needs separate Sigma0 preprocessing. |
 | AI preview missing | Intentional: an unavailable preview is omitted, never replaced by baseline imagery. |
+| Network analysis takes several minutes | The bounded historical OSM extract and road graph can be slow; watch the backend and avoid starting a duplicate job. |
 
 ## Interpretation and limits
 
 - Results are candidate detections. Intersections with mapped roads, bridges and buildings prioritise inspection; they do not establish damage.
 - Unknown or unsupported pixels remain unknown. In the Trishuli export only 6.464% of the requested area is assessable by the selected method.
-- Medical-facility access is a bounded graph proxy, not absolute isolation or a safe route.
+- The older hospital-only, case-bound access count is a separate proxy. New town/medical scenarios use a 2 km context buffer, a fixed nearest reachable destination, and optimistic/pessimistic handling of unknown roads; neither proves isolation or a safe route.
 - Scores are uncalibrated. HAND thresholds are provisional, and candidate reduction under HAND is not validated accuracy.
 - No debris/landslide/glacier-collapse classifier, Sentinel-2 confirmation, landing-zone recommendation or short-term collapse prediction is provided.
-- EMSR927 comparison is **incomplete**. Bidur reference labels describe landslide/mass-movement context and are not water-flood ground truth or training/tuning input.
+- EMSR927 Bidur has a [completed quantitative context comparison](docs/evaluation/emsr927_bidur/README.md) against landslide/mass-movement labels. It is not flood-water ground truth or training/tuning input.
+
+## Verified Trishuli export
+
+Completed Experimental AI + HAND job `c6f8f1c0fc52` passed ZIP integrity and summary/GeoJSON/one-page PDF consistency checks. Its historical OSM snapshot was requested for 25 August 2026; all four infrastructure categories were available.
+
+| Result | Value |
+|---|---:|
+| AOI-clipped candidate evidence | 6,702 pixels / 0.6702 km² |
+| Assessable by selected method | 6.46% of AOI pixels |
+| Unknown or unsupported | 102.0056 km² |
+| Candidate-intersecting mapped roads / bridges / buildings | 26 / 5 / 84 |
+| Mapped settlements | 12 |
+| Conditional car disconnections to fixed reachable town/medical destination | 3–11 of 11 assessed |
+| Conditional foot disconnections | 0–12 of 12 assessed |
+
+One car settlement was already disconnected on the mapped pre-event network and is separately not assessed. The lower bounds assume unknown edges open; upper bounds assume them closed. Results are conditional model scenarios, not observed road closures. The full ZIP contains `summary.json`, `provenance.json`, `settlements.geojson`, `SITREP_ONE_PAGE.pdf`, a detailed report and attributions. A 2 km OSM context buffer and 500 m snap limit apply; the context fetch and graph calculation may take several minutes.
+
+The [EMSR927 Bidur comparison](docs/evaluation/emsr927_bidur/README.md) covers five **mass movement / landslide** polygons. Within the 4.7904 km² footprint, candidate shares for the frozen baseline, pilot AI and pilot AI + HAND were 1.22%, 16.14% and 10.94%; unknown shares were 46.62%, 10.46% and 53.23%. These are spatial-context figures, not flood IoU or damage accuracy. Reference road, bridge and building comparisons include coverage and missing-geometry accounting. No labels entered inference or tuning.
 
 ## Evidence and reproducibility
 
@@ -185,7 +212,7 @@ The candidate was trained on 173 patches / 27 events and validated on 12 patches
 
 **Delivery boundary:** the verified dashboard and the Trishuli export use the existing pilot checkpoint. The new candidate was trained and evaluated separately, and its integration into the cached demo has not been verified.
 
-Exports include satellite IDs, timestamps, hashes, method, historical OSM snapshot, source availability, attribution and limitations. ZIP exports include a standalone HTML report; reports print cleanly from the browser.
+Exports include satellite IDs, timestamps, hashes, method, historical OSM snapshot, source availability, attribution and limitations. ZIP exports include a one-page PDF plus standalone HTML and Markdown detailed reports.
 
 Keep raw scenes, model weights, raster outputs and private keys **outside Git**.
 
@@ -202,6 +229,8 @@ Optional baseline/AI HAND variants preserve existing methods and outputs. Provis
 - [docs/integration.md](docs/integration.md): data contract, exact setup, validation, limitations
 - [docs/general_pipeline_step5.md](docs/general_pipeline_step5.md): current general workflow
 - [docs/general_ai.md](docs/general_ai.md): general-case experimental AI
+- [docs/access_scenarios.md](docs/access_scenarios.md): destination, graph and unknown-edge rules
+- [docs/evaluation/emsr927_bidur/README.md](docs/evaluation/emsr927_bidur/README.md): EMSR927 landslide-context comparison
 
 ## License and attribution
 
